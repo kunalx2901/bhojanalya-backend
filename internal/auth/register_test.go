@@ -9,10 +9,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+func setupTestRouter() *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
 
+	r.POST("/auth/register", Register)
+
+	return r
+}
 func TestRegisterSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := router.NewRouter()
+	r := setupTestRouter()
 
 	payload := map[string]string{
 		"name":     "Test User",
@@ -34,7 +41,7 @@ func TestRegisterSuccess(t *testing.T) {
 
 func TestRegisterMissingFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := router.NewRouter()
+	r := setupTestRouter()
 
 	payload := map[string]string{
 		"email": "test@example.com",
@@ -54,7 +61,7 @@ func TestRegisterMissingFields(t *testing.T) {
 
 func TestRegisterDuplicateEmail(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := router.NewRouter()
+	r := setupTestRouter()
 
 	payload := map[string]string{
 		"name":     "Test User",
