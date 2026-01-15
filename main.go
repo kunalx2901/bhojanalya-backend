@@ -1,31 +1,23 @@
 package main
 
 import (
-	"log"
 	"bhojanalya/internal/auth"
-	"bhojanalya/internal/router"
-	"bhojanalya/prisma/db" // Adjust path accordingly
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// 1. Initialize Prisma Client
-	client := db.NewClient()
-	if err := client.Connect(); err != nil {
-		log.Fatalf("❌ Prisma connect error: %v", err)
-	}
-	defer func() {
-		if err := client.Disconnect(); err != nil {
-			panic(err)
-		}
-	}()
+	r := gin.Default()
 
-	// 2. Use Prisma Repository instead of InMemory
-	repo := auth.NewPrismaUserRepository(client)
+	repo := auth.NewInMemoryUserRepository()
 	service := auth.NewService(repo)
+	handler := auth.NewHandler(service)
 
-	// 3. Start Router
-	r := router.NewRouter(service)
+	authRoutes := r.Group("/auth")
+	{
+		authRoutes.POST("/register", handler.Register)
+		authRoutes.POST("/login", handler.Login)
+	}
 
-	log.Println("🚀 Server running on http://localhost:8080")
 	r.Run(":8080")
 }
