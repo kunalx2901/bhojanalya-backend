@@ -6,45 +6,61 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// temporary in-memory store (TDD step)
-var users = make(map[string]bool)
+type Handler struct {
+	service *Service
+}
 
-type registerRequest struct {
+func NewHandler(service *Service) *Handler {
+	return &Handler{service: service}
+}
+
+type RegisterRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-func Register(c *gin.Context) {
-	var req registerRequest
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid request",
-		})
+// REGISTER HANDLER
+func (h *Handler) Register(c *gin.Context) {
+	var req RegisterRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
-	if req.Name == "" || req.Email == "" || req.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "missing required fields",
-		})
+	user, err := h.service.Register(req.Name, req.Email, req.Password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	if users[req.Email] {
-		c.JSON(http.StatusConflict, gin.H{
-			"message": "email already exists",
-		})
-		return
-	}
-
-	// mark email as registered
-	users[req.Email] = true
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":    "mock-id",
-		"name":  req.Name,
-		"email": req.Email,
+		"name":  user.Name,
+		"email": user.Email,
+	})
+}
+
+// LOGIN HANDLER
+func (h *Handler) Login(c *gin.Context) {
+	var req LoginRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	user, err := h.service.Login(req.Email, req.Password)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "login successful",
+		"email":   user.Email,
 	})
 }

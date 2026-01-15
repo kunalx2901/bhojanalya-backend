@@ -6,26 +6,25 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Service contains business logic.
+var (
+	ErrInvalidCredentials = errors.New("invalid email or password")
+)
+
 type Service struct {
 	repo UserRepository
 }
 
-// Constructor (IMPORTANT: accepts interface, not struct)
 func NewService(repo UserRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// Register registers a new user with hashed password.
+// REGISTER
 func (s *Service) Register(name, email, password string) (*User, error) {
 	if name == "" || email == "" || password == "" {
 		return nil, errors.New("missing required fields")
 	}
 
-	exists, err := s.repo.ExistsByEmail(email)
-	if err != nil {
-		return nil, err
-	}
+	exists, _ := s.repo.ExistsByEmail(email)
 	if exists {
 		return nil, errors.New("email already exists")
 	}
@@ -46,6 +45,24 @@ func (s *Service) Register(name, email, password string) (*User, error) {
 
 	if err := s.repo.Save(user); err != nil {
 		return nil, err
+	}
+
+	return user, nil
+}
+
+// LOGIN
+func (s *Service) Login(email, password string) (*User, error) {
+	user, err := s.repo.FindByEmail(email)
+	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	err = bcrypt.CompareHashAndPassword(
+		[]byte(user.Password),
+		[]byte(password),
+	)
+	if err != nil {
+		return nil, ErrInvalidCredentials
 	}
 
 	return user, nil
