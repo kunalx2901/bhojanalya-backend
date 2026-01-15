@@ -1,24 +1,37 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"bhojanalya/internal/auth"
+
+	"github.com/gin-gonic/gin"
 )
 
-// NewRouter creates and returns the main router
-func NewRouter() *gin.Engine {
-	r := gin.New()
+func NewRouter(service *auth.Service) *gin.Engine {
+	r := gin.Default()
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
+	r.POST("/auth/register", func(c *gin.Context) {
+		var req struct {
+			Name     string `json:"name"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "invalid request"})
+			return
+		}
+
+		user, err := service.Register(req.Name, req.Email, req.Password)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(201, gin.H{
+			"name":  user.Name,
+			"email": user.Email,
 		})
 	})
-
-	authGroup := r.Group("/auth")
-	{
-		authGroup.POST("/register", auth.Register)
-	}
 
 	return r
 }
