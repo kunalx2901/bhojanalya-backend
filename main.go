@@ -7,43 +7,45 @@ import (
 	"bhojanalya/internal/auth"
 	"bhojanalya/internal/db"
 	"bhojanalya/internal/middleware"
+	"bhojanalya/internal/restaurant"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// 1️⃣ Load environment variables
+	// Load environment variables
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("❌ Error loading .env file")
+		log.Fatal("Error loading .env file")
 	}
 
-	// 2️⃣ Validate JWT_SECRET early (fail fast)
+	// Validate JWT_SECRET early (fail fast)
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Fatal("❌ JWT_SECRET is not set in .env")
+		log.Fatal("JWT_SECRET is not set in .env")
 	}
 
-	log.Println("✅ Environment loaded successfully")
+	log.Println("Environment loaded successfully")
 
-	// 3️⃣ Create Gin router
+	// Create Gin router
 	r := gin.Default()
 
-	// 4️⃣ Setup Auth dependencies
+	// Database connection
 	pgDB := db.ConnectPostgres()
-	repo := auth.NewPostgresUserRepository(pgDB)
 
-	service := auth.NewService(repo)
-	handler := auth.NewHandler(service)
+	// Auth dependencies
+	userRepo := auth.NewPostgresUserRepository(pgDB)
+	authService := auth.NewService(userRepo)
+	authHandler := auth.NewHandler(authService)
 
-	// 5️⃣ Public Auth Routes
+	// Public Auth Routes
 	authRoutes := r.Group("/auth")
 	{
-		authRoutes.POST("/register", handler.Register)
-		authRoutes.POST("/login", handler.Login)
+		authRoutes.POST("/register", authHandler.Register)
+		authRoutes.POST("/login", authHandler.Login)
 	}
 
-	// 6️⃣ Protected Routes (JWT required)
+	// Protected test route
 	protected := r.Group("/protected")
 	protected.Use(middleware.AuthMiddleware())
 	{
@@ -56,12 +58,25 @@ func main() {
 		})
 	}
 
-	// 7️⃣ Health Check (always useful)
+	// RESTAURANT MODULE 
+
+	restaurantRepo := restaurant.NewPostgresRepository(pgDB)
+	restaurantService := restaurant.NewService(restaurantRepo)
+	restaurantHandler := restaurant.NewHandler(restaurantService)
+
+	restaurantRoutes := r.Group("/restaurants")
+	restaurantRoutes.Use(middleware.AuthMiddleware())
+	{
+		restaurantRoutes.POST("", restaurantHandler.CreateRestaurant)
+		restaurantRoutes.GET("/me", restaurantHandler.ListMyRestaurants)
+	}
+
+	// Health Check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// 8️⃣ Start server
+	// Start server
 	log.Println("Server running on http://localhost:8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatal("Failed to start server:", err)
