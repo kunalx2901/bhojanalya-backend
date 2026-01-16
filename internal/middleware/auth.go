@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"bhojanalya/internal/auth"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,19 +21,20 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format, use 'Bearer <token>'"})
 			c.Abort()
 			return
 		}
 
-		email, err := auth.ValidateToken(parts[1])
+		userID, email, err := auth.ValidateToken(parts[1])
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token: " + err.Error()})
 			c.Abort()
 			return
 		}
 
-		// Attach user email to request context
+		// Attach user info to request context
+		c.Set("userID", userID)
 		c.Set("userEmail", email)
 		c.Next()
 	}
