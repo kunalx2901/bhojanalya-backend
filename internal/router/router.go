@@ -9,6 +9,11 @@ import (
 func NewRouter(service *auth.Service) *gin.Engine {
 	r := gin.Default()
 
+	// Health check route
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
 	r.POST("/auth/register", func(c *gin.Context) {
 		var req struct {
 			Name     string `json:"name"`

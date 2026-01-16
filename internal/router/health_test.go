@@ -5,13 +5,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"bhojanalya/internal/auth"
+
 	"github.com/gin-gonic/gin"
 )
 
 func TestHealthCheck(t *testing.T) {
 	// Arrange
 	gin.SetMode(gin.TestMode)
-	r := NewRouter()
+	
+	// Create mock service for testing
+	repo := auth.NewInMemoryUserRepository()
+	service := auth.NewService(repo)
+	r := NewRouter(service)
 
 	// ❌ No route registered yet (RED phase)
 
