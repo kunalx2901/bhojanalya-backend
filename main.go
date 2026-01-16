@@ -5,12 +5,11 @@ import (
 	"os"
 
 	"bhojanalya/internal/auth"
+	"bhojanalya/internal/db"
 	"bhojanalya/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	
-
 )
 
 func main() {
@@ -31,7 +30,9 @@ func main() {
 	r := gin.Default()
 
 	// 4️⃣ Setup Auth dependencies
-	repo := auth.NewInMemoryUserRepository()
+	pgDB := db.ConnectPostgres()
+	repo := auth.NewPostgresUserRepository(pgDB)
+
 	service := auth.NewService(repo)
 	handler := auth.NewHandler(service)
 

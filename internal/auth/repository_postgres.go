@@ -26,12 +26,16 @@ func (r *PostgresUserRepository) Save(user *User) error {
 	return err
 }
 
-func (r *PostgresUserRepository) ExistsByEmail(email string) bool {
+func (r *PostgresUserRepository) ExistsByEmail(email string) (bool, error) {
 	query := `SELECT 1 FROM users WHERE email=$1 LIMIT 1`
 	row := r.db.QueryRow(context.Background(), query, email)
 
 	var exists int
-	return row.Scan(&exists) == nil
+	err := row.Scan(&exists)
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (r *PostgresUserRepository) FindByEmail(email string) (*User, error) {
