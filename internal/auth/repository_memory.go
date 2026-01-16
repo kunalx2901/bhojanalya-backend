@@ -1,6 +1,10 @@
 package auth
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+)
 
 type InMemoryUserRepository struct {
 	users map[string]*User
@@ -13,6 +17,10 @@ func NewInMemoryUserRepository() *InMemoryUserRepository {
 }
 
 func (r *InMemoryUserRepository) Save(user *User) error {
+	// Generate UUID if not already set
+	if user.ID == "" {
+		user.ID = uuid.New().String()
+	}
 	r.users[user.Email] = user
 	return nil
 }

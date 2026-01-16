@@ -2,6 +2,7 @@ package auth
 
 // User is the domain entity.
 type User struct {
+	ID       string
 	Name     string
 	Email    string
 	Password string
