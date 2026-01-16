@@ -13,7 +13,11 @@ func setupTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
-	r.POST("/auth/register", Register)
+	repo := NewInMemoryUserRepository()
+	service := NewService(repo)
+	handler := NewHandler(service)
+
+	r.POST("/auth/register", handler.Register)
 
 	return r
 }
