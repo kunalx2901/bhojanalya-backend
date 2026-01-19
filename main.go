@@ -8,7 +8,7 @@ import (
 	"bhojanalya/internal/db"
 	"bhojanalya/internal/middleware"
 	"bhojanalya/internal/restaurant"
-
+	"bhojanalya/internal/menu"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -70,6 +70,20 @@ func main() {
 		restaurantRoutes.POST("", restaurantHandler.CreateRestaurant)
 		restaurantRoutes.GET("/me", restaurantHandler.ListMyRestaurants)
 	}
+
+
+	// menu module
+	menuRepo := menu.NewPostgresRepository(pgDB)
+	menuService := menu.NewService(menuRepo)
+	menuHandler := menu.NewHandler(menuService)
+
+	menuRoutes := r.Group("/restaurants/:id/menu")
+	menuRoutes.Use(middleware.AuthMiddleware())
+	{
+		menuRoutes.POST("", menuHandler.UploadMenu)
+	}
+
+
 
 	// Health Check
 	r.GET("/health", func(c *gin.Context) {
