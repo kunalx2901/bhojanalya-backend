@@ -93,8 +93,10 @@ func main() {
 			menus.POST("/upload", menuHandler.Upload)
 		}
 
-
-
+		//ocr worker
+		ocrRepo := ocr.NewRepository(db)
+        ocrService := ocr.NewService(ocrRepo)
+        ocr.StartWorker(ocrService)
 
 		// Health Check
 		r.GET("/health", func(c *gin.Context) {
