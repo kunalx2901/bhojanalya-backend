@@ -152,7 +152,7 @@ func TestListMyRestaurants_Empty(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if restaurants != nil && len(restaurants) != 0 {
+	if len(restaurants) != 0 {
 		t.Errorf("expected empty list, got %d restaurants", len(restaurants))
 	}
 }
