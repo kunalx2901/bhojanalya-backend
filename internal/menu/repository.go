@@ -1,6 +1,9 @@
 package menu
 
 type Repository interface {
-	Create(menu *Menu) error
-	FindByRestaurant(restaurantID string) (*Menu, error)
+	CreateUpload(
+		restaurantID int,
+		imageURL string,
+		filename string,
+	) (int, error)
 }

@@ -1,10 +1,8 @@
 package menu
 
-import "time"
+type UploadStatus string
 
-type Menu struct {
-	ID           string
-	RestaurantID string
-	FilePath     string
-	UploadedAt   time.Time
-}
+const (
+	StatusMenuUploaded UploadStatus = "MENU_UPLOADED"
+	StatusFailed       UploadStatus = "FAILED"
+)

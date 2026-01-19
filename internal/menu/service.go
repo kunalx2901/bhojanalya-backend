@@ -1,26 +1,52 @@
 package menu
 
-import "errors"
+import (
+	"context"
+	"fmt"
+	"mime/multipart"
+
+	"github.com/google/uuid"
+)
+
+type Storage interface {
+	Upload(ctx context.Context, key string, file multipart.File) (string, error)
+}
 
 type Service struct {
-	repo Repository
+	repo    Repository
+	storage Storage
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, storage Storage) *Service {
+	return &Service{repo: repo, storage: storage}
 }
 
-// to upload a new menu for a restaurant
-func (s *Service) UploadMenu(restaurantID string, filePath string) error {
-	if restaurantID == "" || filePath == "" {
-		return errors.New("invalid menu upload")
+func (s *Service) UploadMenu(
+	ctx context.Context,
+	restaurantID int,
+	file multipart.File,
+	filename string,
+) (int, string, error) {
+
+	key := fmt.Sprintf(
+		"menus/%d/%s",
+		restaurantID,
+		uuid.New().String(),
+	)
+
+	url, err := s.storage.Upload(ctx, key, file)
+	if err != nil {
+		return 0, "", err
 	}
 
-	menu := &Menu{
-		RestaurantID: restaurantID,
-		FilePath:     filePath,
+	menuUploadID, err := s.repo.CreateUpload(
+		restaurantID,
+		url,
+		filename,
+	)
+	if err != nil {
+		return 0, "", err
 	}
 
-	return s.repo.Create(menu)
+	return menuUploadID, url, nil
 }
-
