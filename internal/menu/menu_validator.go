@@ -12,6 +12,9 @@ var allowedExt = map[string]bool{
 	".csv":  true,
 	".json": true,
 	".xml":  true,
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
 }
 
 func ValidateFileExtension(filename string) error {

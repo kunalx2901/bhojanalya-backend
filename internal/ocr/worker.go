@@ -8,10 +8,14 @@ import (
 func StartWorker(service *Service) {
 	go func() {
 		for {
-			if err := service.ProcessOne(); err != nil {
-				log.Println("OCR idle or error:", err)
-				time.Sleep(5 * time.Second)
+			err := service.ProcessOne()
+
+			if err != nil {
+				log.Println("OCR worker:", err)
 			}
+
+			// ✅ Always sleep to avoid tight loop
+			time.Sleep(2 * time.Second)
 		}
 	}()
 }
