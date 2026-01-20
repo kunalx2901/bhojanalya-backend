@@ -1,12 +1,16 @@
 package ocr
 
-import "database/sql"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
 type Repository struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
-func NewRepository(db *sql.DB) *Repository {
+func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
@@ -14,7 +18,7 @@ func (r *Repository) FetchNext() (int, string, error) {
 	var id int
 	var url string
 
-	err := r.db.QueryRow(`
+	err := r.db.QueryRow(context.Background(), `
 		SELECT id, image_url
 		FROM menu_uploads
 		WHERE status = 'MENU_UPLOADED'
@@ -26,7 +30,7 @@ func (r *Repository) FetchNext() (int, string, error) {
 }
 
 func (r *Repository) UpdateStatus(id int, status string, errMsg *string) error {
-	_, err := r.db.Exec(`
+	_, err := r.db.Exec(context.Background(), `
 		UPDATE menu_uploads
 		SET status = $1,
 		    ocr_error = $2,
@@ -38,7 +42,7 @@ func (r *Repository) UpdateStatus(id int, status string, errMsg *string) error {
 }
 
 func (r *Repository) SaveOCRText(id int, text string) error {
-	_, err := r.db.Exec(`
+	_, err := r.db.Exec(context.Background(), `
 		UPDATE menu_uploads
 		SET raw_text = $1,
 		    status = 'OCR_DONE',

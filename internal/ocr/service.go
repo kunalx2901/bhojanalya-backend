@@ -30,16 +30,15 @@ func (s *Service) ProcessOne() error {
 	}
 	defer resp.Body.Close()
 
-	tmpFile := "/tmp/menu_file"
-	out, err := os.Create(tmpFile)
+	tmpFile, err := os.CreateTemp("", "menu-*")
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer os.Remove(tmpFile.Name())
 
-	_, _ = io.Copy(out, resp.Body)
+	_, _ = io.Copy(tmpFile, resp.Body)
 
-	text, err := ExtractText(tmpFile)
+	text, err := ExtractText(tmpFile.Name())
 	if err != nil {
 		msg := err.Error()
 		_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)

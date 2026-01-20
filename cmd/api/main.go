@@ -9,6 +9,7 @@ import (
 	"bhojanalya/internal/db"
 	"bhojanalya/internal/menu"
 	"bhojanalya/internal/middleware"
+	"bhojanalya/internal/ocr"
 	"bhojanalya/internal/restaurant"
 	"bhojanalya/internal/storage"
 
@@ -18,9 +19,12 @@ import (
 
 func main() {
 	// Load environment variables
+	if os.Getenv("APP_ENV") != "production" {
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+			log.Println("No .env file found, relying on environment variables")
+		}
 	}
+
 
 	// Validate JWT_SECRET early (fail fast)
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -93,10 +97,10 @@ func main() {
 			menus.POST("/upload", menuHandler.Upload)
 		}
 
-		//ocr worker
-		ocrRepo := ocr.NewRepository(db)
-        ocrService := ocr.NewService(ocrRepo)
-        ocr.StartWorker(ocrService)
+		// OCR worker
+		ocrRepo := ocr.NewRepository(pgDB)
+		ocrService := ocr.NewService(ocrRepo)
+		ocr.StartWorker(ocrService)
 
 		// Health Check
 		r.GET("/health", func(c *gin.Context) {
@@ -104,8 +108,8 @@ func main() {
 		})
 
 		// Start server
-		log.Println("Server running on http://localhost:8080")
-		if err := r.Run(":8080"); err != nil {
+		log.Println("Server running on http://localhost:8000")
+		if err := r.Run(":8000"); err != nil {
 			log.Fatal("Failed to start server:", err)
 		}
 	}
