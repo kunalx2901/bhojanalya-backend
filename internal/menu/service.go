@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"mime/multipart"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -27,26 +29,32 @@ func (s *Service) UploadMenu(
 	file multipart.File,
 	filename string,
 ) (int, string, error) {
+	// Extract file extension
+	ext := strings.ToLower(filepath.Ext(filename))
 
+	// Generate unique key (R2 object key)
 	key := fmt.Sprintf(
-		"menus/%d/%s",
+		"menus/%d/%s%s",
 		restaurantID,
 		uuid.New().String(),
+		ext,
 	)
 
-	url, err := s.storage.Upload(ctx, key, file)
+	// Upload to R2 (returns public URL, not key)
+	_, err := s.storage.Upload(ctx, key, file)
 	if err != nil {
 		return 0, "", err
 	}
 
+	// Store object KEY in database, not the public URL
 	menuUploadID, err := s.repo.CreateUpload(
 		restaurantID,
-		url,
-		filename,
+		key,           // Store object key
+		filename,      // Store original filename
 	)
 	if err != nil {
 		return 0, "", err
 	}
 
-	return menuUploadID, url, nil
+	return menuUploadID, key, nil
 }
