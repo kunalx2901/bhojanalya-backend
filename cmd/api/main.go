@@ -121,8 +121,11 @@ func main() {
 	}()
 
 	// test file for LLM module
-	llamaClient := llm.NewLLaMAClient()
-	r.GET("/test/llama", llm.TestLLaMA(llamaClient))
+	// hfClient := llm.NewHuggingFaceClient()
+	r.GET("/test/gemini", llm.TestGeminiHandler)
+
+
+
 
 	// --------------------
 	// Health
