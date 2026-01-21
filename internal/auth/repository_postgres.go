@@ -23,11 +23,11 @@ func (r *PostgresUserRepository) Save(user *User) error {
 	}
 
 	query := `
-		INSERT INTO users (id, name, email, password)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (id, name, email, password, role)
+		VALUES ($1, $2, $3, $4, $5)
 	`
 	_, err := r.db.Exec(context.Background(), query,
-		user.ID, user.Name, user.Email, user.Password,
+		user.ID, user.Name, user.Email, user.Password, user.Role,
 	)
 	return err
 }
@@ -46,13 +46,13 @@ func (r *PostgresUserRepository) ExistsByEmail(email string) (bool, error) {
 
 func (r *PostgresUserRepository) FindByEmail(email string) (*User, error) {
 	query := `
-		SELECT id, name, email, password
+		SELECT id, name, email, password, role
 		FROM users WHERE email=$1
 	`
 	row := r.db.QueryRow(context.Background(), query, email)
 
 	user := &User{}
-	if err := row.Scan(&user.ID, &user.Name, &user.Email, &user.Password); err != nil {
+	if err := row.Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.Role); err != nil {
 		return nil, errors.New("user not found")
 	}
 	return user, nil

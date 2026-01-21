@@ -43,7 +43,7 @@ func (s *Service) Start() error {
 func (s *Service) processOne() error {
 	log.Println("OCR worker checking for MENU_UPLOADED rows...")
 
-	id, objectKey, err := s.repo.FetchNext()
+	id, objectKey, err := s.repo.FetchPending()
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil

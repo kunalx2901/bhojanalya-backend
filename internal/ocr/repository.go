@@ -28,7 +28,7 @@ func (r *Repository) FetchPending() (int, string, error) {
 	var id int
 	var url string
 
-	err := r.db.QueryRow(context.Background(), `
+	err = r.db.QueryRow(context.Background(), `
 		SELECT id, image_url
 		FROM menu_uploads
 		WHERE status = 'MENU_UPLOADED'

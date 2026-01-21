@@ -16,7 +16,7 @@ func getJWTSecret() ([]byte, error) {
 	return []byte(secret), nil
 }
 
-func GenerateToken(userID, email string) (string, error) {
+func GenerateToken(userID, email, role string) (string, error) {
 	secret, err := getJWTSecret()
 	if err != nil {
 		return "", err
@@ -25,6 +25,7 @@ func GenerateToken(userID, email string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"email":   email,
+		"role":    role,
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 	}
 
@@ -32,10 +33,10 @@ func GenerateToken(userID, email string) (string, error) {
 	return token.SignedString(secret)
 }
 
-func ValidateToken(tokenString string) (string, string, error) {
+func ValidateToken(tokenString string) (string, string, string, error) {
 	secret, err := getJWTSecret()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
@@ -47,27 +48,32 @@ func ValidateToken(tokenString string) (string, string, error) {
 	})
 
 	if err != nil {
-		return "", "", errors.New("token parsing failed: " + err.Error())
+		return "", "", "", errors.New("token parsing failed: " + err.Error())
 	}
 
 	if !token.Valid {
-		return "", "", errors.New("token is not valid")
+		return "", "", "", errors.New("token is not valid")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", "", errors.New("invalid claims type")
+		return "", "", "", errors.New("invalid claims type")
 	}
 
 	userID, ok := claims["user_id"].(string)
 	if !ok {
-		return "", "", errors.New("user_id claim not found or invalid type")
+		return "", "", "", errors.New("user_id claim not found or invalid type")
 	}
 
 	email, ok := claims["email"].(string)
 	if !ok {
-		return "", "", errors.New("email claim not found or invalid type")
+		return "", "", "", errors.New("email claim not found or invalid type")
 	}
 
-	return userID, email, nil
+	role, ok := claims["role"].(string)
+	if !ok {
+		return "", "", "", errors.New("role claim not found or invalid type")
+	}
+
+	return userID, email, role, nil
 }
