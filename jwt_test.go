@@ -18,7 +18,7 @@ func TestJWTFlow(t *testing.T) {
 	email := "test@example.com"
 
 	// Generate token
-	token, err := auth.GenerateToken(userID, email)
+	token, err := auth.GenerateToken(userID, email, "restaurant")
 	if err != nil {
 		t.Fatalf("Failed to generate token: %v", err)
 	}
@@ -26,13 +26,14 @@ func TestJWTFlow(t *testing.T) {
 	fmt.Printf("Generated token: %s\n", token)
 
 	// Validate token
-	extractedUserID, extractedEmail, err := auth.ValidateToken(token)
+	extractedUserID, extractedEmail, extractedRole, err := auth.ValidateToken(token)
 	if err != nil {
 		t.Fatalf("Failed to validate token: %v", err)
 	}
 
 	fmt.Printf("Extracted userID: %s\n", extractedUserID)
 	fmt.Printf("Extracted email: %s\n", extractedEmail)
+	fmt.Printf("Extracted role: %s\n", extractedRole)
 
 	if extractedUserID != userID {
 		t.Fatalf("Expected userID %s, got %s", userID, extractedUserID)
