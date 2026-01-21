@@ -1,17 +1,17 @@
 package main
 
 import (
-	"context"
-	"log"
-	"os"
-
 	"bhojanalya/internal/auth"
 	"bhojanalya/internal/db"
+	"bhojanalya/internal/llm"
 	"bhojanalya/internal/menu"
 	"bhojanalya/internal/middleware"
 	"bhojanalya/internal/ocr"
 	"bhojanalya/internal/restaurant"
 	"bhojanalya/internal/storage"
+	"context"
+	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -119,6 +119,10 @@ func main() {
 			log.Fatal("OCR worker crashed:", err)
 		}
 	}()
+
+	// test file for LLM module
+	llamaClient := llm.NewLLaMAClient()
+	r.GET("/test/llama", llm.TestLLaMA(llamaClient))
 
 	// --------------------
 	// Health
