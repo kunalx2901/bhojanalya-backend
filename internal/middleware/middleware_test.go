@@ -69,7 +69,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-key-for-testing-only")
 
 	// Generate a valid test token
-	token, err := auth.GenerateToken("test-user-id", "test@example.com")
+	token, err := auth.GenerateToken("test-user-id", "test@example.com", "restaurant")
 	if err != nil {
 		t.Fatalf("failed to generate test token: %v", err)
 	}
