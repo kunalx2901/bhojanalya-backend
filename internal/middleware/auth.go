@@ -26,7 +26,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userID, email, err := auth.ValidateToken(parts[1])
+		userID, email, role, err := auth.ValidateToken(parts[1])
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token: " + err.Error()})
 			c.Abort()
@@ -36,6 +36,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Attach user info to request context
 		c.Set("userID", userID)
 		c.Set("userEmail", email)
+		c.Set("userRole", role)
 		c.Next()
 	}
 }

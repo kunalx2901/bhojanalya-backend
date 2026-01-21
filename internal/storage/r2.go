@@ -26,6 +26,23 @@ func NewR2Client(ctx context.Context) (*R2Client, error) {
 	bucket := os.Getenv("R2_BUCKET_NAME")
 	baseURL := os.Getenv("R2_PUBLIC_BASE_URL")
 
+	// Validate required environment variables
+	if endpoint == "" {
+		return nil, fmt.Errorf("R2_ENDPOINT is not set")
+	}
+	if accessKey == "" {
+		return nil, fmt.Errorf("R2_ACCESS_KEY is not set")
+	}
+	if secretKey == "" {
+		return nil, fmt.Errorf("R2_SECRET_KEY is not set")
+	}
+	if bucket == "" {
+		return nil, fmt.Errorf("R2_BUCKET_NAME is not set")
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("R2_PUBLIC_BASE_URL is not set")
+	}
+
 	cfg, err := config.LoadDefaultConfig(
 		ctx,
 		config.WithRegion("auto"),

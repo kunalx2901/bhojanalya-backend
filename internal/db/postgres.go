@@ -34,5 +34,58 @@ func ConnectPostgres() *pgxpool.Pool {
 	}
 
 	log.Println("✅ Connected to Aiven PostgreSQL")
+	
+	// Initialize schema
+	if err := initSchema(db); err != nil {
+		log.Fatal("Failed to initialize schema:", err)
+	}
+	
 	return db
 }
+
+// initSchema creates or updates the database schema
+func initSchema(db *pgxpool.Pool) error {
+	ctx := context.Background()
+	
+	// Create users table with role column
+	userTableSQL := `
+		CREATE TABLE IF NOT EXISTS users (
+			id UUID PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			email VARCHAR(255) UNIQUE NOT NULL,
+			password VARCHAR(255) NOT NULL,
+			role VARCHAR(50) NOT NULL DEFAULT 'RESTAURANT',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`
+	if _, err := db.Exec(ctx, userTableSQL); err != nil {
+		return err
+	}
+	
+	// Add role column if it doesn't exist
+	addRoleColumnSQL := `
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) NOT NULL DEFAULT 'RESTAURANT'
+	`
+	if _, err := db.Exec(ctx, addRoleColumnSQL); err != nil {
+		// Ignore error if column already exists
+		log.Println("Note: role column may already exist")
+	}
+	
+	// Create menu_uploads table if not exists
+	menuUploadsSQL := `
+		CREATE TABLE IF NOT EXISTS menu_uploads (
+			id SERIAL PRIMARY KEY,
+			restaurant_id UUID NOT NULL,
+			image_url VARCHAR(500) NOT NULL,
+			status VARCHAR(50) NOT NULL DEFAULT 'MENU_UPLOADED',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (restaurant_id) REFERENCES users(id)
+		)
+	`
+	if _, err := db.Exec(ctx, menuUploadsSQL); err != nil {
+		return err
+	}
+	
+	log.Println("✅ Schema initialized successfully")
+	return nil
