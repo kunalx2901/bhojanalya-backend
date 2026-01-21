@@ -87,11 +87,22 @@ func main() {
 	restaurantHandler := restaurant.NewHandler(restaurantService)
 
 	restaurantRoutes := r.Group("/restaurants")
-	restaurantRoutes.Use(middleware.AuthMiddleware())
+	restaurantRoutes.Use(middleware.AuthMiddleware(), middleware.RequireRole("RESTAURANT"))
 	{
 		restaurantRoutes.POST("", restaurantHandler.CreateRestaurant)
 		restaurantRoutes.GET("/me", restaurantHandler.ListMyRestaurants)
 	}
+
+	// Admin routes
+    // TODO: Implement admin handler with PendingMenus and ApproveMenu methods
+    // admin := r.Group("/admin")
+    // admin.Use(middleware.AuthMiddleware(), middleware.RequireRole("ADMIN"))
+	// {
+	// 	admin.GET("/menus/pending", adminHandler.PendingMenus)
+	// 	admin.POST("/menus/:id/approve", adminHandler.ApproveMenu)
+	// }
+
+
 
 	// --------------------
 	// Menu module
@@ -99,11 +110,20 @@ func main() {
 	menuRepo := menu.NewPostgresRepository(pgDB)
 	menuService := menu.NewService(menuRepo, r2Client)
 	menuHandler := menu.NewHandler(menuService)
+	adminHandler := menu.NewAdminHandler(menuService)
 
 	menus := r.Group("/menus")
 	menus.Use(middleware.AuthMiddleware())
 	{
 		menus.POST("/upload", menuHandler.Upload)
+	}
+
+	// Admin routes
+	admin := r.Group("/admin")
+	admin.Use(middleware.AuthMiddleware(), middleware.RequireRole("ADMIN"))
+	{
+		admin.GET("/menus/pending", adminHandler.PendingMenus)
+		admin.POST("/menus/:id/approve", adminHandler.ApproveMenu)
 	}
 
 	// --------------------

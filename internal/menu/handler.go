@@ -10,8 +10,16 @@ type Handler struct {
 	service *Service
 }
 
+type AdminHandler struct {
+	service *Service
+}
+
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
+}
+
+func NewAdminHandler(service *Service) *AdminHandler {
+	return &AdminHandler{service: service}
 }
 
 func (h *Handler) Upload(c *gin.Context) {
@@ -48,5 +56,25 @@ func (h *Handler) Upload(c *gin.Context) {
 		"object_key": url,
 		"status": "MENU_UPLOADED",
 		"message": "Menu uploaded. OCR processing will start automatically.",
+	})
+}
+
+// PendingMenus returns all menus pending approval
+func (h *AdminHandler) PendingMenus(c *gin.Context) {
+	// TODO: Implement to fetch all menus with status = 'OCR_COMPLETED'
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Pending menus endpoint",
+		"pending_menus": []gin.H{},
+	})
+}
+
+// ApproveMenu approves a menu by ID
+func (h *AdminHandler) ApproveMenu(c *gin.Context) {
+	menuID := c.Param("id")
+	
+	// TODO: Implement to update menu status to 'APPROVED'
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Menu approved",
+		"menu_id": menuID,
 	})
 }

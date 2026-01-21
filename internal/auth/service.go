@@ -2,12 +2,15 @@ package auth
 
 import (
 	"errors"
+	"log"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
 var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
+	AdminEmail            = "admin@bhojanalya.com"
+	AdminPassword         = "Bhojanalya@12345"
 )
 
 type Service struct {
@@ -41,6 +44,7 @@ func (s *Service) Register(name, email, password string) (*User, error) {
 		Name:     name,
 		Email:    email,
 		Password: string(hashedPassword),
+		Role:     string(RoleRestaurant),
 	}
 
 	if err := s.repo.Save(user); err != nil {
@@ -52,8 +56,22 @@ func (s *Service) Register(name, email, password string) (*User, error) {
 
 // LOGIN
 func (s *Service) Login(email, password string) (*User, error) {
+	log.Printf("Login attempt for email: %s", email)
+	
+	// Check if it's the admin credentials
+	if email == AdminEmail && password == AdminPassword {
+		log.Printf("Admin login successful for email: %s", email)
+		return &User{
+			ID:    "admin",
+			Name:  "Bhojanalya Admin",
+			Email: email,
+			Role:  string(RoleAdmin),
+		}, nil
+	}
+	
 	user, err := s.repo.FindByEmail(email)
 	if err != nil {
+		log.Printf("User not found: %s", email)
 		return nil, ErrInvalidCredentials
 	}
 
@@ -62,8 +80,10 @@ func (s *Service) Login(email, password string) (*User, error) {
 		[]byte(password),
 	)
 	if err != nil {
+		log.Printf("Password mismatch for email: %s, error: %v", email, err)
 		return nil, ErrInvalidCredentials
 	}
 
+	log.Printf("Login successful for email: %s with role: %s", email, user.Role)
 	return user, nil
 }
