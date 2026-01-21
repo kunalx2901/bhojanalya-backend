@@ -8,13 +8,9 @@ import (
 
 var allowedExt = map[string]bool{
 	".pdf":  true,
-	".txt":  true,
-	".csv":  true,
-	".json": true,
-	".xml":  true,
+	".png":  true,
 	".jpg":  true,
 	".jpeg": true,
-	".png":  true,
 }
 
 func ValidateFileExtension(filename string) error {
@@ -25,7 +21,7 @@ func ValidateFileExtension(filename string) error {
 	}
 
 	if !allowedExt[ext] {
-		return errors.New("file type not allowed")
+		return errors.New("file type not allowed (PDF, PNG, JPG, JPEG only)")
 	}
 
 	return nil

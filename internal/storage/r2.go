@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"os"
 
@@ -88,4 +89,35 @@ func (r *R2Client) Upload(ctx context.Context, key string, file multipart.File) 
 	}
 
 	return fmt.Sprintf("%s/%s", r.baseURL, key), nil
+}
+
+// GetClient returns the S3 client
+func (r *R2Client) GetClient() *s3.Client {
+	return r.client
+}
+
+// GetBucket returns the bucket name
+func (r *R2Client) GetBucket() string {
+	return r.bucket
+}
+
+
+func DownloadFromR2(ctx context.Context, client *s3.Client, bucket, key, localPath string) error {
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return err
+	}
+	defer out.Body.Close()
+
+	file, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, out.Body)
+	return err
 }

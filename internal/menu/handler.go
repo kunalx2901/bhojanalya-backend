@@ -45,7 +45,8 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"menu_upload_id": menuID,
-		"file_url": url,
+		"object_key": url,
 		"status": "MENU_UPLOADED",
+		"message": "Menu uploaded. OCR processing will start automatically.",
 	})
 }
