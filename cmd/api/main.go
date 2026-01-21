@@ -110,11 +110,20 @@ func main() {
 	menuRepo := menu.NewPostgresRepository(pgDB)
 	menuService := menu.NewService(menuRepo, r2Client)
 	menuHandler := menu.NewHandler(menuService)
+	adminHandler := menu.NewAdminHandler(menuService)
 
 	menus := r.Group("/menus")
 	menus.Use(middleware.AuthMiddleware())
 	{
 		menus.POST("/upload", menuHandler.Upload)
+	}
+
+	// Admin routes
+	admin := r.Group("/admin")
+	admin.Use(middleware.AuthMiddleware(), middleware.RequireRole("ADMIN"))
+	{
+		admin.GET("/menus/pending", adminHandler.PendingMenus)
+		admin.POST("/menus/:id/approve", adminHandler.ApproveMenu)
 	}
 
 	// --------------------
