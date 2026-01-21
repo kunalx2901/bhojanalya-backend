@@ -2,6 +2,7 @@ package menu
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,7 +16,9 @@ func NewHandler(service *Service) *Handler {
 }
 
 func (h *Handler) Upload(c *gin.Context) {
-	restaurantID := c.GetInt("userID")
+	// Note: You might want to ensure you're getting the correct ID type 
+	// based on how your AuthMiddleware sets it.
+	restaurantID := c.GetInt("restaurantID") 
 
 	file, header, err := c.Request.FormFile("menu_file")
 	if err != nil {
@@ -24,11 +27,8 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 🔐 VALIDATE EXTENSION HERE
 	if err := ValidateFileExtension(header.Filename); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -45,8 +45,29 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"menu_upload_id": menuID,
-		"object_key": url,
-		"status": "MENU_UPLOADED",
-		"message": "Menu uploaded. OCR processing will start automatically.",
+		"object_key":     url,
+		"status":         StatusMenuUploaded, // Using the constant from model.go
+		"message":        "Menu uploaded. OCR and Price Analysis will start automatically.",
 	})
+}
+
+// GetStatus allows the frontend to poll for the structured JSON result
+func (h *Handler) GetStatus(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid menu id"})
+		return
+	}
+
+	// You will need to implement GetMenuUpload in your service/repository
+	menuUpload, err := h.service.GetMenuUpload(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "menu upload not found"})
+		return
+	}
+
+	// This response will now include the "structured_data" JSON from Hugging Face 
+	// once the status is "OCR_DONE"
+	c.JSON(http.StatusOK, menuUpload)
 }

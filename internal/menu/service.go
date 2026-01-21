@@ -58,3 +58,8 @@ func (s *Service) UploadMenu(
 
 	return menuUploadID, key, nil
 }
+
+// GetMenuUpload retrieves a menu upload record by ID
+func (s *Service) GetMenuUpload(ctx context.Context, id int) (*MenuUpload, error) {
+	return s.repo.GetByID(ctx, id)
+}
