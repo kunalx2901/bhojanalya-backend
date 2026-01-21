@@ -110,7 +110,12 @@ func main() {
 	// OCR WORKER (CRITICAL)
 	// --------------------
 	ocrRepo := ocr.NewRepository(pgDB)
-	ocrService := ocr.NewService(ocrRepo, r2Client)
+	hfToken := os.Getenv("HUGGINGFACE_API_TOKEN")
+	if hfToken == "" {
+		log.Fatal("HUGGINGFACE_API_TOKEN is not set")
+	}
+	parserClient := ocr.NewParserClient(hfToken)
+	ocrService := ocr.NewService(ocrRepo, r2Client, parserClient)
 
 	// ✅ MUST run in goroutine
 	go func() {

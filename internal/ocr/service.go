@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -16,18 +15,19 @@ import (
 )
 
 type Service struct {
-	repo *Repository
-	r2   *storage.R2Client
+	repo   *Repository
+	r2     *storage.R2Client
+	parser *ParserClient
 }
 
-
-func NewService(repo *Repository, r2 *storage.R2Client) *Service {
+// NewService creates a new OCR service
+func NewService(repo *Repository, r2 *storage.R2Client, parser *ParserClient) *Service {
 	return &Service{
-		repo: repo,
-		r2:   r2,
+		repo:   repo,
+		r2:     r2,
+		parser: parser,
 	}
 }
-
 
 // Start runs the OCR worker forever
 func (s *Service) Start() error {
@@ -53,7 +53,8 @@ func (s *Service) processOne() error {
 
 	log.Printf("Picked menu ID %d (R2 key: %s)", id, objectKey)
 
-	_ = s.repo.UpdateStatus(id, "OCR_PROCESSING", nil)
+	// ✅ Correct retry-aware state
+	_ = s.repo.UpdateStatus(id, "OCR_IN_PROGRESS", nil)
 
 	ext := strings.ToLower(filepath.Ext(objectKey))
 	if ext == "" {
@@ -64,10 +65,8 @@ func (s *Service) processOne() error {
 	localPath := filepath.Join(tempDir, fmt.Sprintf("menu_%d%s", id, ext))
 
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-	return err
-}
-
-
+		return err
+	}
 
 	// ⬇️ DOWNLOAD FROM CLOUDFLARE R2
 	err = storage.DownloadFromR2(
@@ -82,7 +81,7 @@ func (s *Service) processOne() error {
 		_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
 		return err
 	}
-	defer os.Remove(localPath) // Clean up temp file
+	defer os.Remove(localPath)
 
 	info, err := os.Stat(localPath)
 	if err != nil || info.Size() == 0 {
@@ -91,103 +90,84 @@ func (s *Service) processOne() error {
 		return fmt.Errorf("%s", msg)
 	}
 
-	log.Printf("OCR input file ready: %s (%d bytes)", localPath, info.Size())
-
-	// Process based on file type
-	var text string
+	// --- STEP 1: EXTRACT RAW TEXT WITH TESSERACT ---
+	var rawText string
 	if ext == ".pdf" {
-		// Convert PDF to images and OCR
-		var pdfErr error
-		text, pdfErr = s.processPDFtoOCR(id, localPath)
-		if pdfErr != nil {
-			msg := pdfErr.Error()
-			_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
-			return pdfErr
-		}
+		rawText, err = s.processPDFtoOCR(id, localPath)
 	} else {
-		// Process image directly with Tesseract
-		var tesseractErr error
-		text, tesseractErr = runTesseract(localPath)
-		if tesseractErr != nil {
-			msg := tesseractErr.Error()
-			_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
-			return tesseractErr
-		}
+		rawText, err = runTesseract(localPath)
 	}
 
-	if err := s.repo.SaveOCRText(id, text); err != nil {
+	if err != nil {
+		msg := "Tesseract failed: " + err.Error()
+		_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
 		return err
 	}
 
-	// Clear any previous OCR error
-	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
+	// Save raw OCR text
+	if err := s.repo.SaveOCRText(id, rawText); err != nil {
+		return err
+	}
 
-	log.Printf("OCR completed successfully for menu ID %d", id)
+	// --- STEP 2: PARSE TEXT INTO JSON WITH LLM ---
+	log.Printf("Starting LLM parsing for menu ID %d...", id)
+
+	structuredJSON, err := s.parser.ParseWithLogic(rawText)
+	if err != nil {
+		msg := "LLM parsing failed: " + err.Error()
+		log.Printf("Warning: %s", msg)
+		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		return err
+	}
+
+	// Save structured JSON
+	if err := s.repo.SaveStructuredData(id, structuredJSON); err != nil {
+		log.Printf("Failed to save structured JSON: %v", err)
+		return err
+	}
+
+	// ✅ FINAL SUCCESS STATE
+	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
+	log.Printf("OCR and parsing completed successfully for menu ID %d", id)
+
 	return nil
 }
 
-func runTesseract(path string) (string, error) {
-	cmd := exec.Command("tesseract", path, "stdout", "-l", "eng")
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("Tesseract error output:\n%s", string(out))
-		return "", fmt.Errorf("tesseract failed")
-	}
-
-	return string(out), nil
-}
-
-// processPDFtoOCR converts PDF to images and runs OCR on each page
-func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
+// processPDFtoOCR converts PDF to images and extracts text
+func (s *Service) processPDFtoOCR(menuID int, pdfPath string) (string, error) {
 	tempDir := os.TempDir()
-	imagePrefix := filepath.Join(tempDir, fmt.Sprintf("menu_%d_page", id))
+	imagePath := filepath.Join(tempDir, fmt.Sprintf("menu_%d", menuID))
 
-	// Convert PDF to PNG images (one per page)
-	cmd := exec.Command("pdftoppm", pdfPath, imagePrefix, "-png")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("PDF conversion failed: %s", string(out))
-		return "", fmt.Errorf("failed to convert PDF to images: %w", err)
+	cmd := exec.Command("pdftoppm", pdfPath, imagePath)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("pdf conversion failed: %w", err)
 	}
 
-	// Find all generated image files
-	pattern := imagePrefix + "*.png"
-	images, err := filepath.Glob(pattern)
+	var allText string
+	files, err := filepath.Glob(imagePath + "-*.ppm")
 	if err != nil {
-		return "", fmt.Errorf("failed to list generated images: %w", err)
+		return "", err
 	}
 
-	if len(images) == 0 {
-		return "", fmt.Errorf("no images generated from PDF")
-	}
-
-	// Sort images by filename (ensures correct page order)
-	sort.Strings(images)
-
-	// OCR each generated image and combine results
-	var fullText strings.Builder
-	for _, imgPath := range images {
-		log.Printf("OCR processing PDF page: %s", filepath.Base(imgPath))
-
-		pageText, err := runTesseract(imgPath)
+	for _, imgFile := range files {
+		text, err := runTesseract(imgFile)
 		if err != nil {
-			log.Printf("OCR failed on page %s: %v", filepath.Base(imgPath), err)
-			// Continue with next page instead of failing entirely
+			log.Printf("Error processing %s: %v", imgFile, err)
 			continue
 		}
-
-		fullText.WriteString(pageText)
-		fullText.WriteString("\n---PAGE BREAK---\n")
-
-		// Clean up individual page image
-		_ = os.Remove(imgPath)
+		allText += text + "\n"
+		_ = os.Remove(imgFile)
 	}
 
-	if fullText.Len() == 0 {
-		return "", fmt.Errorf("no text extracted from PDF")
-	}
-
-	log.Printf("PDF OCR completed: extracted %d bytes from %d pages", fullText.Len(), len(images))
-	return fullText.String(), nil
+	return allText, nil
 }
 
+// runTesseract runs tesseract OCR on an image file
+func runTesseract(imagePath string) (string, error) {
+	cmd := exec.Command("tesseract", imagePath, "stdout")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("tesseract failed: %w", err)
+	}
+	return string(out), nil
+}

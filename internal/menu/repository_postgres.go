@@ -29,3 +29,26 @@ func (r *PostgresRepository) CreateUpload(
 
 	return id, err
 }
+
+func (r *PostgresRepository) GetByID(ctx context.Context, id int) (*MenuUpload, error) {
+	var upload MenuUpload
+	err := r.db.QueryRow(ctx, `
+		SELECT id, restaurant_id, image_url, raw_text, structured_data, status, ocr_error, created_at, updated_at
+		FROM menu_uploads
+		WHERE id = $1
+	`, id).Scan(
+		&upload.ID,
+		&upload.RestaurantID,
+		&upload.ImageURL,
+		&upload.RawText,
+		&upload.StructuredData,
+		&upload.Status,
+		&upload.OCRError,
+		&upload.CreatedAt,
+		&upload.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &upload, nil
+}
