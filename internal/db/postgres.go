@@ -89,3 +89,4 @@ func initSchema(db *pgxpool.Pool) error {
 	
 	log.Println("✅ Schema initialized successfully")
 	return nil
+}
