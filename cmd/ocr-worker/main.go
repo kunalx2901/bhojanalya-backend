@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
 	"bhojanalya/internal/db"
 	"bhojanalya/internal/ocr"
+	"bhojanalya/internal/storage"
 
 	"github.com/joho/godotenv"
 )
@@ -30,9 +32,16 @@ func main() {
 
 	log.Println("✅ Connected to PostgreSQL")
 
+	// Initialize R2 storage client
+	ctx := context.Background()
+	r2Client, err := storage.NewR2Client(ctx)
+	if err != nil {
+		log.Fatalf("Failed to initialize R2 client: %v", err)
+	}
+
 	// Initialize OCR service
 	repo := ocr.NewRepository(pgDB)
-	service := ocr.NewService(repo)
+	service := ocr.NewService(repo, r2Client)
 
 	log.Println("✅ OCR Worker initialized and running...")
 	log.Println("Processing menu uploads every 2 seconds. Press Ctrl+C to stop.")

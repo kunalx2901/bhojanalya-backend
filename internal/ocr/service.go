@@ -40,6 +40,11 @@ func (s *Service) Start() error {
 	}
 }
 
+// ProcessOne processes a single OCR task (public API for cmd/ocr-worker)
+func (s *Service) ProcessOne() error {
+	return s.processOne()
+}
+
 func (s *Service) processOne() error {
 	log.Println("OCR worker checking for MENU_UPLOADED rows...")
 
