@@ -10,6 +10,7 @@ import (
 	"bhojanalya/internal/restaurant"
 	"bhojanalya/internal/storage"
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -29,49 +30,62 @@ func main() {
 		}
 	}
 
-	if os.Getenv("JWT_SECRET") == "" {
-		log.Fatal("JWT_SECRET is not set")
+	// Verify required environment variables
+	requiredEnvVars := []string{
+		"JWT_SECRET",
+		"DATABASE_URL",
+		"GEMINI_API_KEY",
+		"R2_ACCESS_KEY",
+		"R2_SECRET_KEY",
+		"R2_BUCKET_NAME",
+		"R2_ENDPOINT",
 	}
 
-	log.Println("Environment loaded")
+	for _, envVar := range requiredEnvVars {
+		if os.Getenv(envVar) == "" {
+			log.Fatalf("❌ Required environment variable not set: %s", envVar)
+		}
+	}
+
+	log.Println("✅ Environment loaded")
+	log.Printf("✅ GEMINI_API_KEY is set (length: %d)", len(os.Getenv("GEMINI_API_KEY")))
 
 	// --------------------
 	// DATABASE
 	// --------------------
 	pgDB := db.ConnectPostgres()
+	defer pgDB.Close()
 
-	// cors setup
+	// --------------------
+	// CORS CONFIG
+	// --------------------
 	r := gin.Default()
 
-// --------------------
-// CORS CONFIG (IMPORTANT)
-// --------------------
-r.Use(cors.New(cors.Config{
-	AllowOrigins: []string{
-		"http://localhost:3000", // React (CRA)
-		"http://localhost:5173", // Vite
-		"http://127.0.0.1:5173",
-	},
-	AllowMethods: []string{
-		"GET",
-		"POST",
-		"PUT",
-		"PATCH",
-		"DELETE",
-		"OPTIONS",
-	},
-	AllowHeaders: []string{
-		"Origin",
-		"Content-Type",
-		"Authorization",
-	},
-	ExposeHeaders: []string{
-		"Content-Length",
-	},
-	AllowCredentials: true,
-	MaxAge: 12 * time.Hour,
-}))
-
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: []string{
+			"http://localhost:3000", // React (CRA)
+			"http://localhost:5173", // Vite
+			"http://127.0.0.1:5173",
+		},
+		AllowMethods: []string{
+			"GET",
+			"POST",
+			"PUT",
+			"PATCH",
+			"DELETE",
+			"OPTIONS",
+		},
+		AllowHeaders: []string{
+			"Origin",
+			"Content-Type",
+			"Authorization",
+		},
+		ExposeHeaders: []string{
+			"Content-Length",
+		},
+		AllowCredentials: true,
+		MaxAge: 12 * time.Hour,
+	}))
 
 	// --------------------
 	// STORAGE (R2)
@@ -80,6 +94,7 @@ r.Use(cors.New(cors.Config{
 	if err != nil {
 		log.Fatal("Failed to init R2 client:", err)
 	}
+	log.Println("✅ R2 client initialized")
 
 	// --------------------
 	// AUTH MODULE
@@ -151,15 +166,18 @@ r.Use(cors.New(cors.Config{
 	}
 
 	// --------------------
+	// LLM CLIENT
+	// --------------------
+	llmClient := llm.NewGeminiClient()
+	if llmClient == nil {
+		log.Fatal("❌ Failed to initialize Gemini client")
+	}
+	log.Println("✅ Gemini client initialized")
+
+	// --------------------
 	// OCR WORKER (BACKGROUND)
 	// --------------------
-	
-	llmClient := llm.NewGeminiClient()   // ✅ DECLARED HERE
-
-	menuRepo = menu.NewPostgresRepository(pgDB)
-	menuService = menu.NewService(menuRepo, r2Client) // ✅ DECLARED HERE
 	ocrRepo := ocr.NewRepository(pgDB)
-
 
 	ocrService := ocr.NewService(
 		ocrRepo,
@@ -168,35 +186,118 @@ r.Use(cors.New(cors.Config{
 		menuService,
 	)
 
-
-
+	// --------------------
+	// START WORKERS
+	// --------------------
 	go func() {
-		log.Println("OCR worker started")
+		log.Println("🚀 Starting OCR worker...")
+		// Give debug output first
+		ocrService.DebugPipeline()
+		
+		// Start monitoring
+		//go ocrService.MonitorPipeline()
+		
+		// Start the worker
 		if err := ocrService.Start(); err != nil {
-			log.Fatal("OCR worker crashed:", err)
+			log.Fatal("❌ OCR worker crashed:", err)
 		}
 	}()
 
 	// --------------------
-	// 🔥 LLM TEST ROUTE (DEV ONLY)
+	// TEST ENDPOINTS (DEV ONLY)
 	// --------------------
 	r.POST("/api/llm/test-gemini", llm.TestGeminiHandler)
+	
+	// Add debug endpoint for OCR pipeline
+	r.GET("/debug/ocr", func(c *gin.Context) {
+		ocrService.DebugPipeline()
+		c.JSON(200, gin.H{
+			"message": "OCR debug executed, check logs",
+			"time":    time.Now().Format(time.RFC3339),
+		})
+	})
+	
+	// Add endpoint to manually trigger parsing for a specific ID
+	r.POST("/debug/trigger-parse/:id", func(c *gin.Context) {
+		idStr := c.Param("id")
+		var id int
+		fmt.Sscanf(idStr, "%d", &id)
+		
+		if id <= 0 {
+			c.JSON(400, gin.H{"error": "Invalid ID"})
+			return
+		}
+		
+		// Get raw text from database
+		var rawText string
+		err := pgDB.QueryRow(context.Background(), 
+			"SELECT raw_text FROM menu_uploads WHERE id = $1", id).Scan(&rawText)
+		
+		if err != nil {
+			c.JSON(404, gin.H{"error": "Record not found", "details": err.Error()})
+			return
+		}
+		
+		if rawText == "" {
+			c.JSON(400, gin.H{"error": "No OCR text available"})
+			return
+		}
+		
+		// Process directly
+		rec := ocr.OCRRecord{ID: id, RawText: rawText}
+		err = ocrService.ProcessOCR(rec)
+		
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error":   "Processing failed",
+				"details": err.Error(),
+				"id":      id,
+			})
+			return
+		}
+		
+		c.JSON(200, gin.H{
+			"message": "Processing triggered successfully",
+			"id":      id,
+			"text_length": len(rawText),
+		})
+	})
 
 	// --------------------
 	// HEALTH CHECK
 	// --------------------
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		// Check database connection
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		
+		var dbStatus string
+		if err := pgDB.Ping(ctx); err != nil {
+			dbStatus = "ERROR: " + err.Error()
+		} else {
+			dbStatus = "OK"
+		}
+		
+		c.JSON(200, gin.H{
+			"status":        "ok",
+			"timestamp":     time.Now().Format(time.RFC3339),
+			"database":      dbStatus,
+			"workers":       "running",
+			"gemini_api_key": len(os.Getenv("GEMINI_API_KEY")) > 0,
+		})
 	})
 
 	// --------------------
 	// START SERVER
 	// --------------------
-	log.Println("Server running on http://localhost:8000")
+	log.Println("✅ Server starting on http://localhost:8000")
+	log.Println("📊 Available debug endpoints:")
+	log.Println("   GET  /debug/ocr           - Check OCR pipeline status")
+	log.Println("   POST /debug/trigger-parse/:id - Manually trigger parsing")
+	log.Println("   GET  /health             - Health check")
+	log.Println("   POST /api/llm/test-gemini - Test Gemini API")
+	
 	if err := r.Run(":8000"); err != nil {
-		log.Fatal("Server failed:", err)
+		log.Fatal("❌ Server failed:", err)
 	}
 }
-
-
-
