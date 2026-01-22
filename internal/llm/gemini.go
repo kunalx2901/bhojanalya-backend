@@ -24,10 +24,19 @@ func NewGeminiClient() *GeminiClient {
 	}
 }
 
-func (g *GeminiClient) ParseText(ctx context.Context, prompt string) (string, error) {
+// ParseOCR sends OCR raw text to Gemini and guarantees JSON-only output
+func (g *GeminiClient) ParseOCR(ctx context.Context, ocrText string) (string, error) {
 	if g.apiKey == "" {
 		return "", errors.New("missing GEMINI_API_KEY")
 	}
+	if g.model == "" {
+		return "", errors.New("missing GEMINI_MODEL")
+	}
+	if ocrText == "" {
+		return "", errors.New("empty OCR text")
+	}
+
+	prompt := BuildOCRParsePrompt(ocrText)
 
 	url := fmt.Sprintf(
 		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
@@ -35,23 +44,24 @@ func (g *GeminiClient) ParseText(ctx context.Context, prompt string) (string, er
 		g.apiKey,
 	)
 
-	payload := map[string]interface{}{
-		"contents": []map[string]interface{}{
+	payload := map[string]any{
+		"contents": []map[string]any{
 			{
 				"parts": []map[string]string{
-					{
-						"text": prompt,
-					},
+					{"text": prompt},
 				},
 			},
 		},
-		"generationConfig": map[string]interface{}{
+		"generationConfig": map[string]any{
 			"temperature":     0.2,
 			"maxOutputTokens": 2048,
 		},
 	}
 
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
 
 	req, err := http.NewRequestWithContext(
 		ctx,
@@ -72,12 +82,19 @@ func (g *GeminiClient) ParseText(ctx context.Context, prompt string) (string, er
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
 
-	// 🔥 DEBUG (keep this for now)
+	// 🔥 Keep this during development
 	fmt.Println("GEMINI RAW RESPONSE:", string(raw))
 
-	// Parse Gemini response
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gemini api error: %s", string(raw))
+	}
+
+	// Gemini response shape
 	var result struct {
 		Candidates []struct {
 			Content struct {
@@ -97,5 +114,12 @@ func (g *GeminiClient) ParseText(ctx context.Context, prompt string) (string, er
 		return "", errors.New("empty gemini response")
 	}
 
-	return result.Candidates[0].Content.Parts[0].Text, nil
+	output := result.Candidates[0].Content.Parts[0].Text
+
+	// 🔒 CRITICAL: Ensure JSON-only output
+	if !json.Valid([]byte(output)) {
+		return "", errors.New("gemini returned non-json output")
+	}
+
+	return output, nil
 }

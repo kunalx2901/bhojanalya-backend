@@ -1,37 +1,26 @@
 package llm
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 )
 
-type ParsedMenu struct {
-	Items []MenuItem `json:"items"`
-}
+func ParseLLMResponse(raw string) (*ParsedOCRResult, error) {
+	var parsed ParsedOCRResult
 
-type MenuItem struct {
-	Name       string   `json:"name"`
-	Category   *string  `json:"category"`
-	Price      *float64 `json:"price"`
-	Confidence float64  `json:"confidence"`
-}
-
-func ParseMenu(
-	ctx context.Context,
-	client Client,
-	ocrText string,
-) ([]MenuItem, error) {
-
-	rawJSON, err := client.ParseMenu(ctx, ocrText)
-	if err != nil {
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return nil, err
 	}
 
-	var parsed ParsedMenu
-	if err := json.Unmarshal([]byte(rawJSON), &parsed); err != nil {
-		return nil, errors.New("invalid LLM JSON output")
+	if len(parsed.Items) == 0 {
+		return nil, errors.New("no items parsed from OCR")
 	}
 
-	return parsed.Items, nil
+	for _, item := range parsed.Items {
+		if item.Name == "" || item.Price <= 0 {
+			return nil, errors.New("invalid item detected")
+		}
+	}
+
+	return &parsed, nil
 }

@@ -1,9 +1,7 @@
 package llm
 
-import (
-	"context"
-)
+import "context"
 
 type Client interface {
-	ParseMenu(ctx context.Context, ocrText string) (string, error)
+	ParseOCR(ctx context.Context, ocrText string) (*ParsedOCRResult, error)
 }
