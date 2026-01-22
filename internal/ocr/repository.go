@@ -2,7 +2,7 @@ package ocr
 
 import (
 	"context"
-	"database/sql"
+	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -33,9 +33,7 @@ func (r *Repository) FetchPending() (int, string, error) {
 	var id int
 	var imageURL string
 
-	err = tx.QueryRow(
-		ctx,
-		`
+	err = tx.QueryRow(ctx, `
 		SELECT id, image_url
 		FROM menu_uploads
 		WHERE status = 'MENU_UPLOADED'
@@ -158,6 +156,76 @@ func (r *Repository) SaveParsedData(id int, parsed any) error {
 		WHERE id = $2
 		`,
 		parsed,
+		id,
+	)
+	return err
+}
+
+// FetchPendingForParsing retrieves and CLAIMS the next OCR_DONE record for parsing
+// Uses same atomic claim pattern as FetchPending()
+func (r *Repository) FetchPendingForParsing() ([]OCRRecord, error) {
+	ctx := context.Background()
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Query with FOR UPDATE SKIP LOCKED to claim the record atomically
+	query := `
+		SELECT id, raw_text 
+		FROM menu_uploads 
+		WHERE status = 'OCR_DONE' 
+		AND raw_text IS NOT NULL 
+		AND LENGTH(raw_text) > 10
+		AND parsed_data IS NULL
+		ORDER BY id DESC
+		LIMIT 1
+		FOR UPDATE SKIP LOCKED
+	`
+	
+	var id int
+	var rawText string
+	
+	err = tx.QueryRow(ctx, query).Scan(&id, &rawText)
+	if err != nil {
+		// No pending jobs is NOT an error
+		return nil, nil
+	}
+	
+	// Mark as parsing immediately (atomic claim)
+	_, err = tx.Exec(ctx, `
+		UPDATE menu_uploads
+		SET status = 'PARSING', updated_at = now()
+		WHERE id = $1
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	
+	log.Printf("✅ Claimed record %d for parsing", id)
+	
+	// Return as slice for compatibility with existing code
+	return []OCRRecord{{ID: id, RawText: rawText}}, nil
+}
+
+// MarkFailed marks an OCR record as failed with a reason
+func (r *Repository) MarkFailed(id int, reason string) error {
+	_, err := r.db.Exec(
+		context.Background(),
+		`
+		UPDATE menu_uploads
+		SET status = 'FAILED',
+		    ocr_error = $1,
+		    updated_at = now()
+		WHERE id = $2
+		`,
+		reason,
 		id,
 	)
 	return err

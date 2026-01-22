@@ -2,10 +2,11 @@ package ocr
 
 import "log"
 
-// StartWorkers starts both OCR and LLM workers
-func StartWorkers(service *Service) {
-	log.Println("[WORKER] Starting OCR and LLM workers")
-
-	go service.StartOCRWorker()
-	go service.StartLLMWorker()
+func StartWorker(service *Service) {
+	go func() {
+		log.Println("OCR worker started")
+		if err := service.Start(); err != nil {
+			log.Fatal("OCR worker crashed:", err)
+		}
+	}()
 }

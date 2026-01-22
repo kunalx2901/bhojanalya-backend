@@ -58,3 +58,16 @@ func (s *Service) UploadMenu(
 
 	return menuUploadID, key, nil
 }
+
+// SaveParsedMenu saves the parsed OCR result and cost estimation
+func (s *Service) SaveParsedMenu(
+	menuUploadID int,
+	doc map[string]interface{},
+) error {
+	return s.repo.SaveParsedMenu(menuUploadID, doc)
+}
+
+// // BuildCostForTwo builds the cost-for-two estimation from parsed OCR result
+// func (s *Service) BuildCostForTwo(parsed *llm.ParsedOCRResult) (*CostForTwo, error) {
+// 	return BuildCostForTwo(parsed)
+// }
