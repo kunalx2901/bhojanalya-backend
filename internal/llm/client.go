@@ -3,5 +3,5 @@ package llm
 import "context"
 
 type Client interface {
-	ParseOCR(ctx context.Context, ocrText string) (*ParsedOCRResult, error)
+	ParseOCR(ctx context.Context, ocrText string) (string, error)
 }

@@ -1,17 +1,11 @@
 package ocr
 
-import (
-	"log"
-	"time"
-)
+import "log"
 
-func StartWorker(service *Service) {
-	go func() {
-		for {
-			if err := service.processOne(); err != nil {
-				log.Println("OCR idle or error:", err)
-				time.Sleep(5 * time.Second)
-			}
-		}
-	}()
+// StartWorkers starts both OCR and LLM workers
+func StartWorkers(service *Service) {
+	log.Println("[WORKER] Starting OCR and LLM workers")
+
+	go service.StartOCRWorker()
+	go service.StartLLMWorker()
 }
