@@ -2,23 +2,34 @@ package llm
 
 func BuildOCRParsePrompt(ocrText string) string {
 	return `
-You are extracting structured data from restaurant OCR text.
+You are a data extraction engine.
 
-Rules:
-- Extract ONLY item names, categories, and prices.
-- Categories MUST be one of: starter, main_course, drink, dessert.
-- Do NOT calculate totals.
-- Do NOT infer missing prices.
-- If tax percentage is mentioned, extract it.
-- Output ONLY valid JSON.
-- NO markdown, NO explanation.
+Your task:
+- Convert the OCR text into STRICT JSON.
+- Output MUST be valid JSON.
+- Output MUST start with { and end with }.
+- Output MUST contain ONLY JSON.
+- NO explanations.
+- NO markdown.
+- NO comments.
+- NO extra text.
 
-Required JSON format:
+If you cannot extract data, return this exact JSON:
+{
+  "items": [],
+  "tax_percent": 0
+}
+
+Required JSON schema:
 {
   "items": [
-    { "name": "", "category": "", "price": 0 }
+    {
+      "name": "string",
+      "category": "starter | main_course | drink | dessert",
+      "price": number
+    }
   ],
-  "tax_percent": 0
+  "tax_percent": number
 }
 
 OCR TEXT:

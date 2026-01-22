@@ -1,6 +1,9 @@
 package ocr
 
 import (
+	"bhojanalya/internal/llm"
+	"bhojanalya/internal/menu"
+	"bhojanalya/internal/storage"
 	"context"
 	"database/sql"
 	"fmt"
@@ -11,9 +14,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"bhojanalya/internal/llm"
-	"bhojanalya/internal/menu"
-	"bhojanalya/internal/storage"
 )
 
 type Service struct {
@@ -84,7 +84,7 @@ func (s *Service) processOne() error {
 		return err
 	}
 
-	log.Printf("Picked menu ID %d (R2 key: %s)", id, objectKey)
+	log.Printf("[OCR][%d] Picked image: %s", id, objectKey)
 
 	_ = s.repo.UpdateStatus(id, "OCR_PROCESSING", nil)
 
@@ -93,67 +93,118 @@ func (s *Service) processOne() error {
 		ext = ".png"
 	}
 
-	tempDir := os.TempDir()
-	localPath := filepath.Join(tempDir, fmt.Sprintf("menu_%d%s", id, ext))
+	localPath := filepath.Join(os.TempDir(), fmt.Sprintf("menu_%d%s", id, ext))
 
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(os.TempDir(), 0755); err != nil {
 		return err
 	}
 
 	// ⬇️ DOWNLOAD FROM CLOUDFLARE R2
-	err = storage.DownloadFromR2(
+	if err := storage.DownloadFromR2(
 		context.Background(),
 		s.r2.GetClient(),
 		s.r2.GetBucket(),
 		objectKey,
 		localPath,
-	)
-	if err != nil {
+	); err != nil {
 		msg := "R2 download failed: " + err.Error()
 		_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
-		return nil // 👈 do NOT block worker
+		return nil
 	}
-	defer os.Remove(localPath) // Clean up temp file
+	defer os.Remove(localPath)
 
-	info, err := os.Stat(localPath)
-	if err != nil || info.Size() == 0 {
-		msg := "downloaded file missing or empty"
-		_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
-		return fmt.Errorf("%s", msg)
-	}
-
-	log.Printf("OCR input file ready: %s (%d bytes)", localPath, info.Size())
-
-	// Process based on file type
 	var text string
 	if ext == ".pdf" {
-		// Convert PDF to images and OCR
-		var pdfErr error
-		text, pdfErr = s.processPDFtoOCR(id, localPath)
-		if pdfErr != nil {
-			msg := pdfErr.Error()
+		t, err := s.processPDFtoOCR(id, localPath)
+		if err != nil {
+			msg := err.Error()
 			_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
-			return pdfErr
+			return nil
 		}
+		text = t
 	} else {
-		// Process image directly with Tesseract
-		var tesseractErr error
-		text, tesseractErr = runTesseract(localPath)
-		if tesseractErr != nil {
-			msg := tesseractErr.Error()
+		t, err := runTesseract(localPath)
+		if err != nil {
+			msg := err.Error()
 			_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
-			return tesseractErr
+			return nil
 		}
+		text = t
 	}
 
 	if err := s.repo.SaveOCRText(id, text); err != nil {
 		return err
 	}
 
-	// Clear any previous OCR error
 	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
+	log.Printf("[OCR][%d] OCR completed (%d chars)", id, len(text))
 
-	log.Printf("OCR completed successfully for menu ID %d", id)
+	return nil
+}
+
+//
+// ─────────────────────────────────────────────────────────────
+//  LLM PARSING WORKER (THIS FIXES YOUR ISSUE)
+// ─────────────────────────────────────────────────────────────
+//
+
+func (s *Service) StartLLMWorker() {
+	log.Println("[LLM WORKER] Started")
+
+	for {
+		if err := s.processLLM(); err != nil {
+			log.Println("[LLM WORKER] Error:", err)
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (s *Service) processLLM() error {
+	ctx := context.Background()
+
+	log.Println("[LLM] Checking for OCR_DONE rows...")
+
+	id, rawText, err := s.repo.FetchForLLMParsing()
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+
+	log.Printf("[LLM][%d] Picked row (%d chars)", id, len(rawText))
+
+	_ = s.repo.UpdateStatus(id, "PARSING_LLM", nil)
+
+	// 1️⃣ Call Gemini
+	rawJSON, err := s.llmClient.ParseOCR(ctx, rawText)
+	if err != nil {
+		msg := "LLM parsing failed: " + err.Error()
+		log.Printf("[LLM][%d][ERROR] %s", id, msg)
+		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		return nil
+	}
+
+	// 2️⃣ Validate JSON
+	parsed, err := llm.ParseLLMResponse(rawJSON)
+	if err != nil {
+		msg := "JSON validation failed: " + err.Error()
+		log.Printf("[LLM][%d][ERROR] %s", id, msg)
+		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		return nil
+	}
+
+	// 3️⃣ Save parsed JSON
+	if err := s.repo.SaveParsedData(id, parsed); err != nil {
+		msg := "DB save failed: " + err.Error()
+		log.Printf("[LLM][%d][ERROR] %s", id, msg)
+		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		return nil
+	}
+
+	_ = s.repo.UpdateStatus(id, "PARSED", nil)
+	log.Printf("[LLM][%d] Parsing completed successfully", id)
+
 	return nil
 }
 
@@ -166,7 +217,7 @@ func (s *Service) processParsingPhase() error {
         return fmt.Errorf("fetch pending for parsing: %w", err)
     }
     
-    if records == nil || len(records) == 0 {
+    if len(records) == 0 {
         return nil // No work to do
     }
     
@@ -227,67 +278,41 @@ func (s *Service) ProcessOCR(rec OCRRecord) error {
 
 func runTesseract(path string) (string, error) {
 	cmd := exec.Command("tesseract", path, "stdout", "-l", "eng")
-
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("Tesseract error output:\n%s", string(out))
+		log.Printf("Tesseract error:\n%s", string(out))
 		return "", fmt.Errorf("tesseract failed")
 	}
-
 	return string(out), nil
 }
 
-// processPDFtoOCR converts PDF to images and runs OCR on each page
 func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	tempDir := os.TempDir()
 	imagePrefix := filepath.Join(tempDir, fmt.Sprintf("menu_%d_page", id))
 
-	// Convert PDF to PNG images (one per page)
 	cmd := exec.Command("pdftoppm", pdfPath, imagePrefix, "-png")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("PDF conversion failed: %s", string(out))
-		return "", fmt.Errorf("failed to convert PDF to images: %w", err)
+		return "", fmt.Errorf("pdf convert failed: %s", string(out))
 	}
 
-	// Find all generated image files
-	pattern := imagePrefix + "*.png"
-	images, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", fmt.Errorf("failed to list generated images: %w", err)
-	}
-
-	if len(images) == 0 {
-		return "", fmt.Errorf("no images generated from PDF")
-	}
-
-	// Sort images by filename (ensures correct page order)
+	images, _ := filepath.Glob(imagePrefix + "*.png")
 	sort.Strings(images)
 
-	// OCR each generated image and combine results
-	var fullText strings.Builder
-	for _, imgPath := range images {
-		log.Printf("OCR processing PDF page: %s", filepath.Base(imgPath))
-
-		pageText, err := runTesseract(imgPath)
-		if err != nil {
-			log.Printf("OCR failed on page %s: %v", filepath.Base(imgPath), err)
-			// Continue with next page instead of failing entirely
-			continue
+	var b strings.Builder
+	for _, img := range images {
+		txt, err := runTesseract(img)
+		if err == nil {
+			b.WriteString(txt)
+			b.WriteString("\n")
 		}
-
-		fullText.WriteString(pageText)
-		fullText.WriteString("\n---PAGE BREAK---\n")
-
-		// Clean up individual page image
-		_ = os.Remove(imgPath)
+		_ = os.Remove(img)
 	}
 
-	if fullText.Len() == 0 {
+	if b.Len() == 0 {
 		return "", fmt.Errorf("no text extracted from PDF")
 	}
 
-	log.Printf("PDF OCR completed: extracted %d bytes from %d pages", fullText.Len(), len(images))
-	return fullText.String(), nil
+	return b.String(), nil
 }
 
 // DebugPipeline is a temporary method to verify the pipeline
@@ -302,7 +327,7 @@ func (s *Service) DebugPipeline() {
 	records, err := s.repo.FetchPendingForParsing()
 	if err != nil {
 		log.Printf("Error fetching parsing pending: %v", err)
-	} else if records == nil || len(records) == 0 {
+	} else if len(records) == 0 {
 		log.Printf("Parsing pending (OCR_DONE): 0 records (no work)")
 	} else {
 		log.Printf("Parsing pending (OCR_DONE): %d records", len(records))
