@@ -1,17 +1,12 @@
 package ocr
 
-import (
-	"log"
-	"time"
-)
+import "log"
 
 func StartWorker(service *Service) {
 	go func() {
-		for {
-			if err := service.processOne(); err != nil {
-				log.Println("OCR idle or error:", err)
-				time.Sleep(5 * time.Second)
-			}
+		log.Println("OCR worker started")
+		if err := service.Start(); err != nil {
+			log.Fatal("OCR worker crashed:", err)
 		}
 	}()
 }

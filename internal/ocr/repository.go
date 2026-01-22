@@ -83,3 +83,45 @@ func (r *Repository) SaveOCRText(id int, text string) error {
 
 	return err
 }
+
+// fetching OCR records pending parsing
+
+func (r *Repository) FetchPendingForParsing() ([]OCRRecord, error) {
+	rows, err := r.db.Query(
+		context.Background(), `
+		SELECT id, raw_text
+		FROM ocr_results
+		WHERE status = 'OCR_DONE'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []OCRRecord
+	for rows.Next() {
+		var rec OCRRecord
+		if err := rows.Scan(&rec.ID, &rec.RawText); err != nil {
+			return nil, err
+		}
+		records = append(records, rec)
+	}
+	return records, nil
+}
+
+// MarkFailed marks an OCR record as failed with a reason
+func (r *Repository) MarkFailed(id int, reason string) error {
+	_, err := r.db.Exec(
+		context.Background(),
+		`
+		UPDATE menu_uploads
+		SET status = 'FAILED',
+		    ocr_error = $1,
+		    updated_at = now()
+		WHERE id = $2
+		`,
+		reason,
+		id,
+	)
+	return err
+}
