@@ -1,6 +1,9 @@
 package ocr
 
 import (
+	"bhojanalya/internal/llm"
+	"bhojanalya/internal/menu"
+	"bhojanalya/internal/storage"
 	"context"
 	"database/sql"
 	"fmt"
@@ -11,9 +14,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"bhojanalya/internal/llm"
-	"bhojanalya/internal/menu"
-	"bhojanalya/internal/storage"
 )
 
 type Service struct {
@@ -95,12 +95,12 @@ func (s *Service) processOne() error {
 
 	localPath := filepath.Join(os.TempDir(), fmt.Sprintf("menu_%d%s", id, ext))
 
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(os.TempDir(), 0755); err != nil {
 		return err
 	}
 
 	// ⬇️ DOWNLOAD FROM CLOUDFLARE R2
-	err = storage.DownloadFromR2(
+	if err := storage.DownloadFromR2(
 		context.Background(),
 		s.r2.GetClient(),
 		s.r2.GetBucket(),
@@ -217,7 +217,7 @@ func (s *Service) processParsingPhase() error {
         return fmt.Errorf("fetch pending for parsing: %w", err)
     }
     
-    if records == nil || len(records) == 0 {
+    if len(records) == 0 {
         return nil // No work to do
     }
     
@@ -327,7 +327,7 @@ func (s *Service) DebugPipeline() {
 	records, err := s.repo.FetchPendingForParsing()
 	if err != nil {
 		log.Printf("Error fetching parsing pending: %v", err)
-	} else if records == nil || len(records) == 0 {
+	} else if len(records) == 0 {
 		log.Printf("Parsing pending (OCR_DONE): 0 records (no work)")
 	} else {
 		log.Printf("Parsing pending (OCR_DONE): %d records", len(records))

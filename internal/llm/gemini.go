@@ -52,10 +52,11 @@ func (g *GeminiClient) ParseOCR(ctx context.Context, ocrText string) (string, er
 				},
 			},
 		},
-		"generationConfig": map[string]any{
-			"temperature":     0.2,
-			"maxOutputTokens": 2048,
-		},
+		"generationConfig": map[string]interface{}{
+		"temperature":     0,
+		"maxOutputTokens": 2048,
+		"responseMimeType": "application/json",
+	},
 	}
 
 	body, err := json.Marshal(payload)
