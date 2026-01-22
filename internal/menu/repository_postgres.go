@@ -2,6 +2,8 @@ package menu
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,8 +32,7 @@ func (r *PostgresRepository) CreateUpload(
 	return id, err
 }
 
-
-// save_ocr_text saves the extracted OCR text for a given menu upload.
+// SaveMenuItems saves individual menu items (legacy support)
 func (r *PostgresRepository) SaveMenuItems(
 	menuUploadID int,
 	restaurantID int,
@@ -69,4 +70,37 @@ func (r *PostgresRepository) SaveMenuItems(
 	}
 
 	return tx.Commit(ctx)
+}
+
+// SaveParsedMenu saves the canonical parsed JSON + cost-for-two
+func (r *PostgresRepository) SaveParsedMenu(
+	menuUploadID int,
+	doc map[string]interface{},
+) error {
+
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+
+	cmd, err := r.db.Exec(
+		context.Background(),
+		`
+		UPDATE menu_uploads
+		SET parsed_data = $1,
+		    status = 'PARSED'
+		WHERE id = $2
+		`,
+		data,
+		menuUploadID,
+	)
+	if err != nil {
+		return err
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return errors.New("no menu_upload row updated")
+	}
+
+	return nil
 }

@@ -153,8 +153,22 @@ r.Use(cors.New(cors.Config{
 	// --------------------
 	// OCR WORKER (BACKGROUND)
 	// --------------------
+	
+	llmClient := llm.NewGeminiClient()   // ✅ DECLARED HERE
+
+	menuRepo = menu.NewPostgresRepository(pgDB)
+	menuService = menu.NewService(menuRepo, r2Client) // ✅ DECLARED HERE
 	ocrRepo := ocr.NewRepository(pgDB)
-	ocrService := ocr.NewService(ocrRepo, r2Client)
+
+
+	ocrService := ocr.NewService(
+		ocrRepo,
+		r2Client,
+		llmClient,
+		menuService,
+	)
+
+
 
 	go func() {
 		log.Println("OCR worker started")
@@ -183,3 +197,6 @@ r.Use(cors.New(cors.Config{
 		log.Fatal("Server failed:", err)
 	}
 }
+
+
+

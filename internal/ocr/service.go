@@ -11,20 +11,25 @@ import (
 	"sort"
 	"strings"
 	"time"
-
+	"bhojanalya/internal/llm"
+	"bhojanalya/internal/menu"
 	"bhojanalya/internal/storage"
 )
 
 type Service struct {
 	repo *Repository
 	r2   *storage.R2Client
+	llmClient *llm.GeminiClient
+	menuService *menu.Service
 }
 
 
-func NewService(repo *Repository, r2 *storage.R2Client) *Service {
+func NewService(repo *Repository, r2 *storage.R2Client, llmClient *llm.GeminiClient, menuService *menu.Service) *Service {
 	return &Service{
 		repo: repo,
 		r2:   r2,
+		llmClient: llmClient,
+		menuService: menuService,
 	}
 }
 
@@ -195,4 +200,34 @@ func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	log.Printf("PDF OCR completed: extracted %d bytes from %d pages", fullText.Len(), len(images))
 	return fullText.String(), nil
 }
+ 
+// ProcessPendingOCRs processes all OCR records pending parsing
+func (s *Service) ProcessOCR(rec OCRRecord) error {
+	ctx := context.Background()
 
+	rawJSON, err := s.llmClient.ParseOCR(ctx, rec.RawText)
+	if err != nil {
+		_ = s.repo.MarkFailed(rec.ID, err.Error())
+		return err
+	}
+
+	parsed, err := llm.ParseLLMResponse(rawJSON)
+	if err != nil {
+		_ = s.repo.MarkFailed(rec.ID, err.Error())
+		return err
+	}
+
+	cost, err := menu.BuildCostForTwo(parsed)
+	if err != nil {
+		_ = s.repo.MarkFailed(rec.ID, err.Error())
+		return err
+	}
+
+	doc := map[string]interface{}{
+		"ocr_raw_text": rec.RawText,
+		"parsed_menu":  parsed,
+		"cost_for_two": cost,
+	}
+
+	return s.menuService.SaveParsedMenu(rec.ID, doc)
+}

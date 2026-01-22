@@ -8,8 +8,8 @@ const (
 )
 
 type MenuItem struct {
-	Name       string
-	Category   *string
-	Price      *float64
-	Confidence float64
+	Name       string  `json:"name"`
+	Category   *string `json:"category"`
+	Price      *float64 `json:"price"`
+	Confidence float64 `json:"confidence,omitempty"`
 }
