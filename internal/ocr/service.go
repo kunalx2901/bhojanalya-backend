@@ -17,31 +17,54 @@ import (
 )
 
 type Service struct {
-	repo *Repository
-	r2   *storage.R2Client
-	llmClient *llm.GeminiClient
+	repo        *Repository
+	r2          *storage.R2Client
+	llmClient   *llm.GeminiClient
 	menuService *menu.Service
 }
 
-
 func NewService(repo *Repository, r2 *storage.R2Client, llmClient *llm.GeminiClient, menuService *menu.Service) *Service {
 	return &Service{
-		repo: repo,
-		r2:   r2,
-		llmClient: llmClient,
+		repo:        repo,
+		r2:          r2,
+		llmClient:   llmClient,
 		menuService: menuService,
 	}
 }
 
-
-// Start runs the OCR worker forever
+// Start runs the OCR AND parsing workers forever
 func (s *Service) Start() error {
-	for {
+	// Start both workers in separate goroutines
+	go s.runOCRWorker()
+	go s.runParsingWorker()
+	
+	// Block forever
+	select {}
+}
+
+// runOCRWorker processes new menu uploads (OCR phase)
+func (s *Service) runOCRWorker() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	
+	for range ticker.C {
 		err := s.processOne()
 		if err != nil {
-			log.Println("OCR idle or error:", err)
+			log.Println("OCR worker error:", err)
 		}
-		time.Sleep(5 * time.Second)
+	}
+}
+
+// runParsingWorker processes completed OCR results (Parsing phase)
+func (s *Service) runParsingWorker() {
+	ticker := time.NewTicker(7 * time.Second)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		err := s.processParsingPhase()
+		if err != nil {
+			log.Println("Parsing worker error:", err)
+		}
 	}
 }
 
@@ -74,10 +97,8 @@ func (s *Service) processOne() error {
 	localPath := filepath.Join(tempDir, fmt.Sprintf("menu_%d%s", id, ext))
 
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-	return err
-}
-
-
+		return err
+	}
 
 	// ⬇️ DOWNLOAD FROM CLOUDFLARE R2
 	err = storage.DownloadFromR2(
@@ -133,6 +154,74 @@ func (s *Service) processOne() error {
 	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
 
 	log.Printf("OCR completed successfully for menu ID %d", id)
+	return nil
+}
+
+func (s *Service) processParsingPhase() error {
+    log.Println("Parsing worker checking for OCR_DONE rows...")
+    
+    // Now returns single record or nil
+    records, err := s.repo.FetchPendingForParsing()
+    if err != nil {
+        return fmt.Errorf("fetch pending for parsing: %w", err)
+    }
+    
+    if records == nil || len(records) == 0 {
+        return nil // No work to do
+    }
+    
+    // Process the claimed record
+    rec := records[0]
+    log.Printf("Processing OCR record %d for parsing (text length: %d)", 
+        rec.ID, len(rec.RawText))
+    
+    if err := s.ProcessOCR(rec); err != nil {
+        log.Printf("Failed to parse OCR record %d: %v", rec.ID, err)
+        return nil // Don't return error to keep worker running
+    }
+    
+    log.Printf("✅ Successfully parsed menu upload %d", rec.ID)
+    return nil
+}
+
+// ProcessOCR processes a single OCR record through LLM
+func (s *Service) ProcessOCR(rec OCRRecord) error {
+	ctx := context.Background()
+
+	rawJSON, err := s.llmClient.ParseOCR(ctx, rec.RawText)
+	if err != nil {
+		_ = s.repo.MarkFailed(rec.ID, fmt.Sprintf("LLM parsing failed: %v", err))
+		return err
+	}
+
+	parsed, err := llm.ParseLLMResponse(rawJSON)
+	if err != nil {
+		_ = s.repo.MarkFailed(rec.ID, fmt.Sprintf("LLM response parsing failed: %v", err))
+		return err
+	}
+
+	cost, err := menu.BuildCostForTwo(parsed)
+	if err != nil {
+		_ = s.repo.MarkFailed(rec.ID, fmt.Sprintf("Cost calculation failed: %v", err))
+		return err
+	}
+
+	// Create document that matches what menu.SaveParsedMenu expects
+	doc := map[string]interface{}{
+		"items":        parsed.Items,
+		"tax_percent":  parsed.TaxPercent,
+		"cost_for_two": cost,
+		"ocr_raw_text": rec.RawText, // Keep raw text for debugging
+		"parsed_at":    time.Now().UTC(),
+		"version":      "1.0",
+	}
+
+	// This will update status to 'PARSED' via menu repository
+	if err := s.menuService.SaveParsedMenu(rec.ID, doc); err != nil {
+		_ = s.repo.MarkFailed(rec.ID, fmt.Sprintf("Failed to save parsed data: %v", err))
+		return err
+	}
+
 	return nil
 }
 
@@ -200,34 +289,84 @@ func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	log.Printf("PDF OCR completed: extracted %d bytes from %d pages", fullText.Len(), len(images))
 	return fullText.String(), nil
 }
- 
-// ProcessPendingOCRs processes all OCR records pending parsing
-func (s *Service) ProcessOCR(rec OCRRecord) error {
+
+// DebugPipeline is a temporary method to verify the pipeline
+func (s *Service) DebugPipeline() {
+	log.Println("=== DEBUG OCR PIPELINE ===")
+	
+	// Check how many OCR pending
+	id, url, err := s.repo.FetchPending()
+	log.Printf("OCR pending (MENU_UPLOADED): id=%d, url=%s, err=%v", id, url, err)
+	
+	// Check how many parsing pending
+	records, err := s.repo.FetchPendingForParsing()
+	if err != nil {
+		log.Printf("Error fetching parsing pending: %v", err)
+	} else if records == nil || len(records) == 0 {
+		log.Printf("Parsing pending (OCR_DONE): 0 records (no work)")
+	} else {
+		log.Printf("Parsing pending (OCR_DONE): %d records", len(records))
+		
+		// Check each record
+		for _, rec := range records {
+			log.Printf("  - ID: %d, RawText length: %d", rec.ID, len(rec.RawText))
+			
+			// Show preview of text
+			if len(rec.RawText) > 0 {
+				preview := rec.RawText
+				if len(preview) > 100 {
+					preview = preview[:100] + "..."
+				}
+				log.Printf("    Preview: %s", preview)
+			}
+		}
+	}
+	
+	// Also check database directly for broader view
 	ctx := context.Background()
-
-	rawJSON, err := s.llmClient.ParseOCR(ctx, rec.RawText)
+	
+	// Count by status
+	query := `
+		SELECT status, COUNT(*) 
+		FROM menu_uploads 
+		WHERE status IN ('MENU_UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'PARSING', 'PARSED')
+		GROUP BY status
+		ORDER BY status
+	`
+	
+	rows, err := s.repo.db.Query(ctx, query)
 	if err != nil {
-		_ = s.repo.MarkFailed(rec.ID, err.Error())
-		return err
+		log.Printf("Database query error: %v", err)
+	} else {
+		defer rows.Close()
+		
+		log.Println("Database Status Summary:")
+		for rows.Next() {
+			var status string
+			var count int
+			rows.Scan(&status, &count)
+			log.Printf("  %-15s: %d", status, count)
+		}
 	}
-
-	parsed, err := llm.ParseLLMResponse(rawJSON)
+	
+	// Check specific record 51
+	var status51, rawText51 string
+	var parsedData51 interface{}
+	err = s.repo.db.QueryRow(ctx, `
+		SELECT status, raw_text, parsed_data
+		FROM menu_uploads WHERE id = 51
+	`).Scan(&status51, &rawText51, &parsedData51)
+	
 	if err != nil {
-		_ = s.repo.MarkFailed(rec.ID, err.Error())
-		return err
+		log.Printf("Record 51 query error: %v", err)
+	} else {
+		hasParsed := "NO"
+		if parsedData51 != nil {
+			hasParsed = "YES"
+		}
+		log.Printf("Record 51: Status=%s, TextLen=%d, Parsed=%s", 
+			status51, len(rawText51), hasParsed)
 	}
-
-	cost, err := menu.BuildCostForTwo(parsed)
-	if err != nil {
-		_ = s.repo.MarkFailed(rec.ID, err.Error())
-		return err
-	}
-
-	doc := map[string]interface{}{
-		"ocr_raw_text": rec.RawText,
-		"parsed_menu":  parsed,
-		"cost_for_two": cost,
-	}
-
-	return s.menuService.SaveParsedMenu(rec.ID, doc)
+	
+	log.Println("=== END DEBUG ===")
 }
