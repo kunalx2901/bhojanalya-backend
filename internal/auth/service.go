@@ -61,12 +61,46 @@ func (s *Service) Login(email, password string) (*User, error) {
 	// Check if it's the admin credentials
 	if email == AdminEmail && password == AdminPassword {
 		log.Printf("Admin login successful for email: %s", email)
-		return &User{
-			ID:    "admin",
-			Name:  "Bhojanalya Admin",
-			Email: email,
-			Role:  string(RoleAdmin),
-		}, nil
+		
+		// Check if admin already exists in database
+		adminUser, err := s.repo.FindByEmail(email)
+		if err != nil {
+			// Admin doesn't exist, create them with ADMIN role
+			hashedPassword, err := bcrypt.GenerateFromPassword(
+				[]byte(password),
+				bcrypt.DefaultCost,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			adminUser := &User{
+				Name:     "Bhojanalya Admin",
+				Email:    email,
+				Password: string(hashedPassword),
+				Role:     string(RoleAdmin), // Stored as ADMIN role in database
+			}
+			
+			if err := s.repo.Save(adminUser); err != nil {
+				log.Printf("Error saving admin user: %v", err)
+				return nil, err
+			}
+			
+			log.Printf("Admin user created in database with ADMIN role")
+			return adminUser, nil
+		}
+		
+		// Admin exists, verify password and return
+		err = bcrypt.CompareHashAndPassword(
+			[]byte(adminUser.Password),
+			[]byte(password),
+		)
+		if err != nil {
+			log.Printf("Admin password mismatch for email: %s", email)
+			return nil, ErrInvalidCredentials
+		}
+		
+		return adminUser, nil
 	}
 	
 	user, err := s.repo.FindByEmail(email)
