@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -32,8 +33,14 @@ func (g *GeminiClient) ParseOCR(ctx context.Context, ocrText string) (string, er
 	if g.model == "" {
 		return "", errors.New("missing GEMINI_MODEL")
 	}
-	if ocrText == "" {
+	if strings.TrimSpace(ocrText) == "" {
 		return "", errors.New("empty OCR text")
+	}
+
+	// 🔒 Soft limit OCR text (important for PDFs)
+	const maxChars = 12000
+	if len(ocrText) > maxChars {
+		ocrText = ocrText[:maxChars]
 	}
 
 	prompt := BuildOCRParsePrompt(ocrText)
@@ -52,11 +59,10 @@ func (g *GeminiClient) ParseOCR(ctx context.Context, ocrText string) (string, er
 				},
 			},
 		},
-		"generationConfig": map[string]interface{}{
-		"temperature":     0,
-		"maxOutputTokens": 2048,
-		"responseMimeType": "application/json",
-	},
+		"generationConfig": map[string]any{
+			"temperature":     0,
+			"maxOutputTokens": 2048,
+		},
 	}
 
 	body, err := json.Marshal(payload)
@@ -88,14 +94,13 @@ func (g *GeminiClient) ParseOCR(ctx context.Context, ocrText string) (string, er
 		return "", err
 	}
 
-	// 🔥 Keep this during development
+	// 🔥 DEV LOG (keep for now)
 	fmt.Println("GEMINI RAW RESPONSE:", string(raw))
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("gemini api error: %s", string(raw))
 	}
 
-	// Gemini response shape
 	var result struct {
 		Candidates []struct {
 			Content struct {
@@ -115,9 +120,11 @@ func (g *GeminiClient) ParseOCR(ctx context.Context, ocrText string) (string, er
 		return "", errors.New("empty gemini response")
 	}
 
-	output := result.Candidates[0].Content.Parts[0].Text
+	output := strings.TrimSpace(
+		result.Candidates[0].Content.Parts[0].Text,
+	)
 
-	// 🔒 CRITICAL: Ensure JSON-only output
+	// 🔒 Final JSON validation
 	if !json.Valid([]byte(output)) {
 		return "", errors.New("gemini returned non-json output")
 	}
