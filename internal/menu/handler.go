@@ -22,6 +22,9 @@ func NewAdminHandler(service *Service) *AdminHandler {
 	return &AdminHandler{service: service}
 }
 
+// --------------------------------------------------
+// Restaurant uploads menu
+// --------------------------------------------------
 func (h *Handler) Upload(c *gin.Context) {
 	restaurantID := c.GetInt("userID")
 
@@ -32,15 +35,12 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 🔐 VALIDATE EXTENSION HERE
 	if err := ValidateFileExtension(header.Filename); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	menuID, url, err := h.service.UploadMenu(
+	menuID, objectKey, err := h.service.UploadMenu(
 		c.Request.Context(),
 		restaurantID,
 		file,
@@ -53,26 +53,31 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"menu_upload_id": menuID,
-		"object_key": url,
-		"status": "MENU_UPLOADED",
-		"message": "Menu uploaded. OCR processing will start automatically.",
+		"object_key":     objectKey,
+		"status":         "MENU_UPLOADED",
+		"message":        "Menu uploaded. OCR and parsing will start automatically.",
 	})
 }
 
-// PendingMenus returns all menus pending approval
+// --------------------------------------------------
+// Admin: view parsed menus pending approval
+// --------------------------------------------------
 func (h *AdminHandler) PendingMenus(c *gin.Context) {
-	// TODO: Implement to fetch all menus with status = 'OCR_COMPLETED'
+	// TODO (NEXT PHASE):
+	// Fetch menus where status = 'PARSED' AND approved_at IS NULL
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Pending menus endpoint",
 		"pending_menus": []gin.H{},
 	})
 }
 
-// ApproveMenu approves a menu by ID
+// --------------------------------------------------
+// Admin: approve menu
+// --------------------------------------------------
 func (h *AdminHandler) ApproveMenu(c *gin.Context) {
 	menuID := c.Param("id")
-	
-	// TODO: Implement to update menu status to 'APPROVED'
+
+	// TODO (NEXT PHASE):
+	// Mark menu as approved and unlock deal suggestions
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Menu approved",
 		"menu_id": menuID,

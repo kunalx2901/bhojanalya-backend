@@ -23,14 +23,24 @@ type Service struct {
 	menuService *menu.Service
 }
 
-func NewService(repo *Repository, r2 *storage.R2Client, llmClient *llm.GeminiClient, menuService *menu.Service) *Service {
-	return &Service{repo, r2, llmClient, menuService}
+func NewService(
+	repo *Repository,
+	r2 *storage.R2Client,
+	llmClient *llm.GeminiClient,
+	menuService *menu.Service,
+) *Service {
+	return &Service{
+		repo:        repo,
+		r2:          r2,
+		llmClient:   llmClient,
+		menuService: menuService,
+	}
 }
 
 //
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────
 // OCR WORKER
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────
 //
 
 func (s *Service) RunOCRWorker() {
@@ -40,13 +50,13 @@ func (s *Service) RunOCRWorker() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := s.processOne(); err != nil {
+		if err := s.processOCR(); err != nil {
 			log.Println("[OCR WORKER] Error:", err)
 		}
 	}
 }
 
-func (s *Service) processOne() error {
+func (s *Service) processOCR() error {
 	log.Println("[OCR] Checking MENU_UPLOADED rows")
 
 	id, objectKey, err := s.repo.FetchPending()
@@ -100,9 +110,9 @@ func (s *Service) processOne() error {
 }
 
 //
-// ─────────────────────────────────────────
-// LLM WORKER
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────
+// LLM + COST-FOR-TWO WORKER
+// ─────────────────────────────────────────────
 //
 
 func (s *Service) RunLLMWorker() {
@@ -129,6 +139,7 @@ func (s *Service) processLLM() error {
 	log.Printf("[LLM][%d] Parsing (%d chars)", id, len(rawText))
 	_ = s.repo.UpdateStatus(id, "PARSING_LLM", nil)
 
+	// 1️⃣ Gemini
 	rawJSON, err := s.llmClient.ParseOCR(ctx, rawText)
 	if err != nil {
 		msg := err.Error()
@@ -136,40 +147,60 @@ func (s *Service) processLLM() error {
 		return nil
 	}
 
-	parsed, err := llm.ParseLLMResponse(rawJSON)
+	// 2️⃣ Parse JSON → LLM domain
+	parsedOCR, err := llm.ParseLLMResponse(rawJSON)
 	if err != nil {
 		msg := err.Error()
 		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
 		return nil
 	}
 
-	cost, err := menu.BuildCostForTwo(parsed)
+	// 3️⃣ Normalize → Menu domain
+	parsedMenu := toParsedMenu(parsedOCR)
+
+	// 4️⃣ Cost-for-two
+	cost, err := menu.BuildCostForTwo(parsedMenu)
 	if err != nil {
 		msg := err.Error()
 		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
 		return nil
 	}
 
-	doc := map[string]any{
-		"items":        parsed.Items,
-		"tax_percent":  parsed.TaxPercent,
-		"cost_for_two": cost,
-	}
+	// 5️⃣ Persist canonical JSON
+	if err := s.menuService.SaveParsedResult(id, parsedMenu, cost); err != nil {
+	msg := err.Error()
+	_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+	return nil
+}
 
-	if err := s.repo.SaveParsedData(id, doc); err != nil {
-		return err
-	}
 
 	_ = s.repo.UpdateStatus(id, "PARSED", nil)
-	log.Printf("[LLM][%d] Parsed successfully", id)
+	log.Printf("[LLM][%d] Parsed + cost-for-two saved", id)
 	return nil
 }
 
 //
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────
 // HELPERS
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────
 //
+
+func toParsedMenu(ocr *llm.ParsedOCRResult) *menu.ParsedMenu {
+	items := make([]menu.Item, 0, len(ocr.Items))
+
+	for _, it := range ocr.Items {
+		items = append(items, menu.Item{
+			Name:     it.Name,
+			Category: it.Category,
+			Price:    it.Price,
+		})
+	}
+
+	return &menu.ParsedMenu{
+		Items:      items,
+		TaxPercent: ocr.TaxPercent,
+	}
+}
 
 func runTesseract(path string) (string, error) {
 	cmd := exec.Command("tesseract", path, "stdout", "-l", "eng")
@@ -201,7 +232,7 @@ func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	}
 
 	if b.Len() == 0 {
-		return "", fmt.Errorf("no text extracted")
+		return "", fmt.Errorf("no text extracted from PDF")
 	}
 	return b.String(), nil
 }

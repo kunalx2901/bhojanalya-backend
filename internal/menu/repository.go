@@ -1,18 +1,14 @@
 package menu
 
 type Repository interface {
+	// Create a menu upload entry (raw menu file)
 	CreateUpload(
 		restaurantID int,
-		imageURL string,
+		objectKey string,   // R2 object key (NOT public URL)
 		filename string,
 	) (int, error)
 
-	SaveMenuItems(
-		menuUploadID int,
-		restaurantID int,
-		items []MenuItem,
-	) error
-
+	// Save parsed menu + cost-for-two as JSON
 	SaveParsedMenu(
 		menuUploadID int,
 		doc map[string]interface{},
