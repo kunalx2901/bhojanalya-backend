@@ -23,16 +23,18 @@ func NewService(repo Repository, storage Storage) *Service {
 	return &Service{repo: repo, storage: storage}
 }
 
+// --------------------------------------------------
+// Upload (unchanged)
+// --------------------------------------------------
 func (s *Service) UploadMenu(
 	ctx context.Context,
 	restaurantID int,
 	file multipart.File,
 	filename string,
 ) (int, string, error) {
-	// Extract file extension
+
 	ext := strings.ToLower(filepath.Ext(filename))
 
-	// Generate unique key (R2 object key)
 	key := fmt.Sprintf(
 		"menus/%d/%s%s",
 		restaurantID,
@@ -40,17 +42,14 @@ func (s *Service) UploadMenu(
 		ext,
 	)
 
-	// Upload to R2 (returns public URL, not key)
-	_, err := s.storage.Upload(ctx, key, file)
-	if err != nil {
+	if _, err := s.storage.Upload(ctx, key, file); err != nil {
 		return 0, "", err
 	}
 
-	// Store object KEY in database, not the public URL
 	menuUploadID, err := s.repo.CreateUpload(
 		restaurantID,
-		key,           // Store object key
-		filename,      // Store original filename
+		key,
+		filename,
 	)
 	if err != nil {
 		return 0, "", err
@@ -59,15 +58,21 @@ func (s *Service) UploadMenu(
 	return menuUploadID, key, nil
 }
 
-// SaveParsedMenu saves the parsed OCR result and cost estimation
-func (s *Service) SaveParsedMenu(
+// --------------------------------------------------
+// Parsed menu persistence (NEW, IMPORTANT)
+// --------------------------------------------------
+func (s *Service) SaveParsedResult(
 	menuUploadID int,
-	doc map[string]interface{},
+	menu *ParsedMenu,
+	cost *CostForTwo,
 ) error {
+
+	doc := map[string]interface{}{
+		"items":        menu.Items,
+		"tax_percent":  menu.TaxPercent,
+		"cost_for_two": cost,
+		"version":      "v1",
+	}
+
 	return s.repo.SaveParsedMenu(menuUploadID, doc)
 }
-
-// // BuildCostForTwo builds the cost-for-two estimation from parsed OCR result
-// func (s *Service) BuildCostForTwo(parsed *llm.ParsedOCRResult) (*CostForTwo, error) {
-// 	return BuildCostForTwo(parsed)
-// }
