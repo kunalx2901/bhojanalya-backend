@@ -17,10 +17,11 @@ import (
 )
 
 type Service struct {
-	repo        *Repository
-	r2          *storage.R2Client
-	llmClient   *llm.GeminiClient
-	menuService *menu.Service
+	repo            *Repository
+	r2              *storage.R2Client
+	llmClient       *llm.GeminiClient
+	menuService     *menu.Service
+	pdfPreprocessor *PDFTextPreprocessor
 }
 
 func NewService(
@@ -30,10 +31,11 @@ func NewService(
 	menuService *menu.Service,
 ) *Service {
 	return &Service{
-		repo:        repo,
-		r2:          r2,
-		llmClient:   llmClient,
-		menuService: menuService,
+		repo:            repo,
+		r2:              r2,
+		llmClient:       llmClient,
+		menuService:     menuService,
+		pdfPreprocessor: NewPDFTextPreprocessor(),
 	}
 }
 
@@ -106,6 +108,12 @@ func (s *Service) processOCR() error {
 
 	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
 	log.Printf("[OCR][%d] Done (%d chars)", id, len(text))
+	
+	if ext == ".pdf" {
+		log.Printf("[OCR][%d] PDF text saved, page count: %d", 
+			id, strings.Count(text, "\n\n")+1)
+	}
+	
 	return nil
 }
 
@@ -139,15 +147,21 @@ func (s *Service) processLLM() error {
 	log.Printf("[LLM][%d] Parsing (%d chars)", id, len(rawText))
 	_ = s.repo.UpdateStatus(id, "PARSING_LLM", nil)
 
-	// 1️⃣ Gemini
-	rawJSON, err := s.llmClient.ParseOCR(ctx, rawText)
+	textToParse := rawText
+	if s.pdfPreprocessor.IsLikelyPDFText(rawText) {
+		log.Printf("[LLM][%d] PDF detected, cleaning text...", id)
+		textToParse = s.pdfPreprocessor.CleanPDFText(rawText)
+		log.Printf("[LLM][%d] PDF cleaning: %d → %d chars", 
+			id, len(rawText), len(textToParse))
+	}
+
+	rawJSON, err := s.llmClient.ParseOCR(ctx, textToParse)
 	if err != nil {
 		msg := err.Error()
 		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
 		return nil
 	}
 
-	// 2️⃣ Parse JSON → LLM domain
 	parsedOCR, err := llm.ParseLLMResponse(rawJSON)
 	if err != nil {
 		msg := err.Error()
@@ -155,10 +169,8 @@ func (s *Service) processLLM() error {
 		return nil
 	}
 
-	// 3️⃣ Normalize → Menu domain
 	parsedMenu := toParsedMenu(parsedOCR)
 
-	// 4️⃣ Cost-for-two
 	cost, err := menu.BuildCostForTwo(parsedMenu)
 	if err != nil {
 		msg := err.Error()
@@ -166,16 +178,24 @@ func (s *Service) processLLM() error {
 		return nil
 	}
 
-	// 5️⃣ Persist canonical JSON
 	if err := s.menuService.SaveParsedResult(id, parsedMenu, cost); err != nil {
-	msg := err.Error()
-	_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
-	return nil
-}
-
+		msg := err.Error()
+		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		return nil
+	}
 
 	_ = s.repo.UpdateStatus(id, "PARSED", nil)
 	log.Printf("[LLM][%d] Parsed + cost-for-two saved", id)
+	
+	// ✅ FIXED: Check if Calculation is not zero value
+	if cost.Calculation.Total > 0 {
+		log.Printf("[LLM][%d] Success: %d items, tax: %.1f%%, total: %.2f",
+			id, len(parsedMenu.Items), parsedMenu.TaxPercent, cost.Calculation.Total)
+	} else {
+		log.Printf("[LLM][%d] Success: %d items, tax: %.1f%%",
+			id, len(parsedMenu.Items), parsedMenu.TaxPercent)
+	}
+	
 	return nil
 }
 
@@ -234,5 +254,30 @@ func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	if b.Len() == 0 {
 		return "", fmt.Errorf("no text extracted from PDF")
 	}
-	return b.String(), nil
+	
+	result := b.String()
+	if len(images) > 1 {
+		result = strings.ReplaceAll(result, "\n\n", "\n---PAGE BREAK---\n")
+	}
+	
+	return result, nil
 }
+
+func (s *Service) DebugPDFText(text string) string {
+	if s.pdfPreprocessor.IsLikelyPDFText(text) {
+		log.Println("[DEBUG] PDF text detected")
+		cleaned := s.pdfPreprocessor.CleanPDFText(text)
+		log.Printf("[DEBUG] Length: %d → %d chars", len(text), len(cleaned))
+		
+		preview := cleaned
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		log.Printf("[DEBUG] Preview: %s", preview)
+		
+		return cleaned
+	}
+	log.Println("[DEBUG] Not PDF text, returning original")
+	return text
+}
+
