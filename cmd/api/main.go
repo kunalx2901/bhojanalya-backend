@@ -15,7 +15,7 @@ import (
 	"bhojanalya/internal/ocr"
 	"bhojanalya/internal/restaurant"
 	"bhojanalya/internal/storage"
-
+	"bhojanalya/internal/competition"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -207,6 +207,18 @@ func main() {
 
 		c.JSON(200, gin.H{"parsed": true})
 	})
+
+
+	// competitive insights routes would go here
+	competitionService := competition.NewService(pgDB)
+	competitionHandler := competition.NewHandler(competitionService)
+
+	// Admin only
+	admin.POST("/competition/recompute", competitionHandler.Recompute)
+
+	// Public / restaurant preview
+	r.GET("/competition/insights", competitionHandler.Get)
+
 
 	// --------------------------------------------------
 	// START SERVER
