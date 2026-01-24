@@ -17,16 +17,20 @@ func getJWTSecret() ([]byte, error) {
 }
 
 func GenerateToken(userID, email, role string) (string, error) {
+	if userID == "" {
+		return "", errors.New("empty userID passed to GenerateToken")
+	}
+
 	secret, err := getJWTSecret()
 	if err != nil {
 		return "", err
 	}
 
 	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"role":    role,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"userID": userID,
+		"email":  email,
+		"role":   role,
+		"exp":    time.Now().Add(24 * time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -40,40 +44,23 @@ func ValidateToken(tokenString string) (string, string, string, error) {
 	}
 
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-		// Verify the signing method
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
 		return secret, nil
 	})
-
-	if err != nil {
-		return "", "", "", errors.New("token parsing failed: " + err.Error())
-	}
-
-	if !token.Valid {
-		return "", "", "", errors.New("token is not valid")
+	if err != nil || !token.Valid {
+		return "", "", "", errors.New("invalid token")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", "", "", errors.New("invalid claims type")
+		return "", "", "", errors.New("invalid token claims")
 	}
 
-	userID, ok := claims["user_id"].(string)
-	if !ok {
-		return "", "", "", errors.New("user_id claim not found or invalid type")
-	}
-
-	email, ok := claims["email"].(string)
-	if !ok {
-		return "", "", "", errors.New("email claim not found or invalid type")
-	}
-
-	role, ok := claims["role"].(string)
-	if !ok {
-		return "", "", "", errors.New("role claim not found or invalid type")
-	}
+	userID, _ := claims["userID"].(string)
+	email, _ := claims["email"].(string)
+	role, _ := claims["role"].(string)
 
 	return userID, email, role, nil
 }

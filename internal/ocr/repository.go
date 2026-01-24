@@ -18,7 +18,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 //
 // ─────────────────────────────────────────────────────────────
-//  OCR FETCH (MENU_UPLOADED → OCR)
+//  OCR FETCH (MENU_UPLOADED → OCR_PROCESSING)
 // ─────────────────────────────────────────────────────────────
 //
 
@@ -41,13 +41,23 @@ func (r *Repository) FetchPending() (int, string, error) {
 		ORDER BY created_at
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
-		`,
-	).Scan(&id, &imageURL)
+	`).Scan(&id, &imageURL)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, "", sql.ErrNoRows
 		}
+		return 0, "", err
+	}
+
+	// Mark as processing immediately (atomic claim)
+	_, err = tx.Exec(ctx, `
+		UPDATE menu_uploads
+		SET status = 'OCR_PROCESSING',
+		    updated_at = now()
+		WHERE id = $1
+	`, id)
+	if err != nil {
 		return 0, "", err
 	}
 
@@ -70,6 +80,8 @@ func (r *Repository) SaveOCRText(id int, text string) error {
 		`
 		UPDATE menu_uploads
 		SET raw_text = $1,
+		    status = 'OCR_DONE',
+		    error_message = NULL,
 		    updated_at = now()
 		WHERE id = $2
 		`,
@@ -97,23 +109,32 @@ func (r *Repository) FetchForLLMParsing() (int, string, error) {
 	var id int
 	var rawText string
 
-	err = tx.QueryRow(
-		ctx,
-		`
+	err = tx.QueryRow(ctx, `
 		SELECT id, raw_text
 		FROM menu_uploads
 		WHERE status = 'OCR_DONE'
+		  AND raw_text IS NOT NULL
 		  AND parsed_data IS NULL
 		ORDER BY updated_at
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
-		`,
-	).Scan(&id, &rawText)
+	`).Scan(&id, &rawText)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, "", sql.ErrNoRows
 		}
+		return 0, "", err
+	}
+
+	// Mark as parsing
+	_, err = tx.Exec(ctx, `
+		UPDATE menu_uploads
+		SET status = 'PARSING_LLM',
+		    updated_at = now()
+		WHERE id = $1
+	`, id)
+	if err != nil {
 		return 0, "", err
 	}
 
@@ -126,7 +147,7 @@ func (r *Repository) FetchForLLMParsing() (int, string, error) {
 
 //
 // ─────────────────────────────────────────────────────────────
-//  STATUS + PARSED DATA
+//  STATUS UPDATE (GENERIC)
 // ─────────────────────────────────────────────────────────────
 //
 
@@ -136,7 +157,7 @@ func (r *Repository) UpdateStatus(id int, status string, errMsg *string) error {
 		`
 		UPDATE menu_uploads
 		SET status = $1,
-		    ocr_error = $2,
+		    error_message = $2,
 		    updated_at = now()
 		WHERE id = $3
 		`,
@@ -147,12 +168,20 @@ func (r *Repository) UpdateStatus(id int, status string, errMsg *string) error {
 	return err
 }
 
+//
+// ─────────────────────────────────────────────────────────────
+//  SAVE PARSED DATA (FINAL STEP)
+// ─────────────────────────────────────────────────────────────
+//
+
 func (r *Repository) SaveParsedData(id int, parsed any) error {
 	_, err := r.db.Exec(
 		context.Background(),
 		`
 		UPDATE menu_uploads
 		SET parsed_data = $1,
+		    status = 'PARSED',
+		    error_message = NULL,
 		    updated_at = now()
 		WHERE id = $2
 		`,
@@ -162,67 +191,19 @@ func (r *Repository) SaveParsedData(id int, parsed any) error {
 	return err
 }
 
-// FetchPendingForParsing retrieves and CLAIMS the next OCR_DONE record for parsing
-// Uses same atomic claim pattern as FetchPending()
-func (r *Repository) FetchPendingForParsing() ([]OCRRecord, error) {
-	ctx := context.Background()
+//
+// ─────────────────────────────────────────────────────────────
+//  FAILURE HANDLING
+// ─────────────────────────────────────────────────────────────
+//
 
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	// Query with FOR UPDATE SKIP LOCKED to claim the record atomically
-	query := `
-		SELECT id, raw_text 
-		FROM menu_uploads 
-		WHERE status = 'OCR_DONE' 
-		AND raw_text IS NOT NULL 
-		AND LENGTH(raw_text) > 10
-		AND parsed_data IS NULL
-		ORDER BY id DESC
-		LIMIT 1
-		FOR UPDATE SKIP LOCKED
-	`
-	
-	var id int
-	var rawText string
-	
-	err = tx.QueryRow(ctx, query).Scan(&id, &rawText)
-	if err != nil {
-		// No pending jobs is NOT an error
-		return nil, nil
-	}
-	
-	// Mark as parsing immediately (atomic claim)
-	_, err = tx.Exec(ctx, `
-		UPDATE menu_uploads
-		SET status = 'PARSING', updated_at = now()
-		WHERE id = $1
-	`, id)
-	if err != nil {
-		return nil, err
-	}
-	
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	
-	log.Printf("✅ Claimed record %d for parsing", id)
-	
-	// Return as slice for compatibility with existing code
-	return []OCRRecord{{ID: id, RawText: rawText}}, nil
-}
-
-// MarkFailed marks an OCR record as failed with a reason
 func (r *Repository) MarkFailed(id int, reason string) error {
 	_, err := r.db.Exec(
 		context.Background(),
 		`
 		UPDATE menu_uploads
 		SET status = 'FAILED',
-		    ocr_error = $1,
+		    error_message = $1,
 		    updated_at = now()
 		WHERE id = $2
 		`,
@@ -230,4 +211,21 @@ func (r *Repository) MarkFailed(id int, reason string) error {
 		id,
 	)
 	return err
+}
+
+//
+// ─────────────────────────────────────────────────────────────
+//  DEBUG / VISIBILITY
+// ─────────────────────────────────────────────────────────────
+//
+
+func (r *Repository) LogState(id int) {
+	var status string
+	_ = r.db.QueryRow(
+		context.Background(),
+		`SELECT status FROM menu_uploads WHERE id = $1`,
+		id,
+	).Scan(&status)
+
+	log.Printf("📌 menu_uploads[%d] status = %s", id, status)
 }

@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 	"strings"
-
+	"log"
 	"bhojanalya/internal/auth"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +32,15 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
+		log.Printf(
+			"[AUTH DEBUG] userID=%v (type=%T), email=%s, role=%s",
+			userID,
+			userID,
+			email,
+			role,
+	)
+
 
 		// Attach user info to request context
 		c.Set("userID", userID)
