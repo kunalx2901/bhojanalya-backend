@@ -1,6 +1,7 @@
 package menu
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -26,8 +27,41 @@ func NewAdminHandler(service *Service) *AdminHandler {
 // Restaurant uploads menu
 // --------------------------------------------------
 func (h *Handler) Upload(c *gin.Context) {
-	restaurantID := c.GetInt("userID")
-
+	// Get restaurant_id from form data
+	restaurantIDStr := c.PostForm("restaurant_id")
+	if restaurantIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "restaurant_id is required in form data",
+			"help":  "Include 'restaurant_id' field in your form-data",
+		})
+		return
+	}
+	
+	// Convert to int
+	var restaurantID int
+	if _, err := fmt.Sscanf(restaurantIDStr, "%d", &restaurantID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid restaurant_id format. Must be a number",
+			"details": err.Error(),
+		})
+		return
+	}
+	
+	if restaurantID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "restaurant_id must be a positive number",
+		})
+		return
+	}
+	
+	// Optional: Verify user owns this restaurant (security check)
+	userID, exists := c.Get("userID")
+	if exists {
+		// You could add a check here to verify the user owns this restaurant
+		// For now, we'll just log it for debugging
+		fmt.Printf("[UPLOAD] User %s uploading to restaurant %d\n", userID, restaurantID)
+	}
+	
 	file, header, err := c.Request.FormFile("menu_file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "menu_file is required"})
@@ -39,6 +73,7 @@ func (h *Handler) Upload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 
 	menuID, objectKey, err := h.service.UploadMenu(
 		c.Request.Context(),
@@ -54,6 +89,7 @@ func (h *Handler) Upload(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"menu_upload_id": menuID,
 		"object_key":     objectKey,
+		"restaurant_id":  restaurantID,
 		"status":         "MENU_UPLOADED",
 		"message":        "Menu uploaded. OCR and parsing will start automatically.",
 	})

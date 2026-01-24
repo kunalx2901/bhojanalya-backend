@@ -102,19 +102,18 @@ func (s *Service) processOCR() error {
 		return nil
 	}
 
+	log.Printf("[OCR][%d] OCR extracted successfully", id)
+
 	if err := s.repo.SaveOCRText(id, text); err != nil {
 		return err
 	}
 
-	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
-	log.Printf("[OCR][%d] Done (%d chars)", id, len(text))
-	
-	if ext == ".pdf" {
-		log.Printf("[OCR][%d] PDF text saved, page count: %d", 
-			id, strings.Count(text, "\n\n")+1)
-	}
-	
-	return nil
+	if err := s.repo.UpdateStatus(id, "OCR_DONE", nil); err != nil {
+	return err
+}
+
+log.Printf("[OCR][%d] OCR completed and status set to OCR_DONE", id)
+return nil
 }
 
 //
@@ -144,15 +143,12 @@ func (s *Service) processLLM() error {
 		return nil
 	}
 
-	log.Printf("[LLM][%d] Parsing (%d chars)", id, len(rawText))
+	log.Printf("[LLM][%d] LLM parsing started", id)
 	_ = s.repo.UpdateStatus(id, "PARSING_LLM", nil)
 
 	textToParse := rawText
 	if s.pdfPreprocessor.IsLikelyPDFText(rawText) {
-		log.Printf("[LLM][%d] PDF detected, cleaning text...", id)
 		textToParse = s.pdfPreprocessor.CleanPDFText(rawText)
-		log.Printf("[LLM][%d] PDF cleaning: %d → %d chars", 
-			id, len(rawText), len(textToParse))
 	}
 
 	rawJSON, err := s.llmClient.ParseOCR(ctx, textToParse)
@@ -169,6 +165,8 @@ func (s *Service) processLLM() error {
 		return nil
 	}
 
+	log.Printf("[LLM][%d] LLM parsed OCR successfully", id)
+
 	parsedMenu := toParsedMenu(parsedOCR)
 
 	cost, err := menu.BuildCostForTwo(parsedMenu)
@@ -178,24 +176,19 @@ func (s *Service) processLLM() error {
 		return nil
 	}
 
+	log.Printf("[LLM][%d] Cost-for-two calculated and saved", id)
+
 	if err := s.menuService.SaveParsedResult(id, parsedMenu, cost); err != nil {
 		msg := err.Error()
 		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
 		return nil
 	}
 
+	log.Printf("[LLM][%d] Parsed menu saved", id)
+
 	_ = s.repo.UpdateStatus(id, "PARSED", nil)
-	log.Printf("[LLM][%d] Parsed + cost-for-two saved", id)
-	
-	// ✅ FIXED: Check if Calculation is not zero value
-	if cost.Calculation.Total > 0 {
-		log.Printf("[LLM][%d] Success: %d items, tax: %.1f%%, total: %.2f",
-			id, len(parsedMenu.Items), parsedMenu.TaxPercent, cost.Calculation.Total)
-	} else {
-		log.Printf("[LLM][%d] Success: %d items, tax: %.1f%%",
-			id, len(parsedMenu.Items), parsedMenu.TaxPercent)
-	}
-	
+	log.Printf("[PIPELINE][%d] Menu processing completed successfully ✅", id)
+
 	return nil
 }
 
@@ -234,19 +227,23 @@ func runTesseract(path string) (string, error) {
 func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	prefix := filepath.Join(os.TempDir(), fmt.Sprintf("menu_%d_page", id))
 
-	cmd := exec.Command("pdftoppm", pdfPath, prefix, "-png")
+	cmd := exec.Command("pdftoppm", "-png", pdfPath, prefix)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("pdf convert failed: %s", string(out))
+		return "", fmt.Errorf("pdftoppm failed: %s", string(out))
 	}
 
-	images, _ := filepath.Glob(prefix + "*.png")
+	images, err := filepath.Glob(prefix + "*.png")
+	if err != nil || len(images) == 0 {
+		return "", fmt.Errorf("no images generated from PDF")
+	}
 	sort.Strings(images)
 
 	var b strings.Builder
 	for _, img := range images {
 		txt, err := runTesseract(img)
 		if err == nil {
-			b.WriteString(txt + "\n")
+			b.WriteString(txt)
+			b.WriteString("\n---PAGE BREAK---\n")
 		}
 		_ = os.Remove(img)
 	}
@@ -254,30 +251,14 @@ func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	if b.Len() == 0 {
 		return "", fmt.Errorf("no text extracted from PDF")
 	}
-	
-	result := b.String()
-	if len(images) > 1 {
-		result = strings.ReplaceAll(result, "\n\n", "\n---PAGE BREAK---\n")
-	}
-	
-	return result, nil
+
+	return b.String(), nil
 }
 
 func (s *Service) DebugPDFText(text string) string {
 	if s.pdfPreprocessor.IsLikelyPDFText(text) {
-		log.Println("[DEBUG] PDF text detected")
 		cleaned := s.pdfPreprocessor.CleanPDFText(text)
-		log.Printf("[DEBUG] Length: %d → %d chars", len(text), len(cleaned))
-		
-		preview := cleaned
-		if len(preview) > 200 {
-			preview = preview[:200] + "..."
-		}
-		log.Printf("[DEBUG] Preview: %s", preview)
-		
 		return cleaned
 	}
-	log.Println("[DEBUG] Not PDF text, returning original")
 	return text
 }
-

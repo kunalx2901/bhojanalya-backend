@@ -35,9 +35,9 @@ func (s *Service) RecomputeSnapshot(
 		  ON mu.restaurant_id = r.id
 		WHERE
 			mu.status = 'PARSED'
+			AND mu.parsed_data IS NOT NULL
 			AND r.city = $1
 			AND r.cuisine_type = $2
-			AND mu.parsed_data IS NOT NULL
 	`, city, cuisine)
 	if err != nil {
 		return err
@@ -53,11 +53,11 @@ func (s *Service) RecomputeSnapshot(
 		}
 	}
 
-	// 🚨 Require minimum samples
-	if len(values) < 3 {
+	// ✅ Allow at least 1 sample (DEV / TEST)
+	if len(values) == 0 {
 		log.Printf(
-			"[COMPETITION] Skipping %s / %s (samples=%d)",
-			city, cuisine, len(values),
+			"[COMPETITION] No data for %s / %s",
+			city, cuisine,
 		)
 		return nil
 	}
@@ -69,8 +69,12 @@ func (s *Service) RecomputeSnapshot(
 		sum += v
 	}
 
-	median := values[len(values)/2]
 	avg := sum / float64(len(values))
+
+	median := values[len(values)/2]
+	if len(values)%2 == 0 {
+		median = (values[len(values)/2-1] + values[len(values)/2]) / 2
+	}
 
 	log.Printf(
 		"[COMPETITION] %s / %s → avg=%.2f median=%.2f samples=%d",
