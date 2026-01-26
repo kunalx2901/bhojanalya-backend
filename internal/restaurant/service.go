@@ -3,7 +3,6 @@ package restaurant
 import (
 	"context"
 	"errors"
-
 	"bhojanalya/internal/competition"
 )
 
@@ -116,3 +115,4 @@ func determinePosition(cost, median float64) string {
 		return "MARKET_AVERAGE"
 	}
 }
+

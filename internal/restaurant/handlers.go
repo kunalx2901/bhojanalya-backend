@@ -3,7 +3,6 @@ package restaurant
 import (
 	"fmt"
 	"net/http"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -97,3 +96,4 @@ func (h *Handler) GetCompetitionInsight(c *gin.Context) {
 
 	c.JSON(http.StatusOK, insight)
 }
+

@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"time"
-
+	"bhojanalya/internal/deals"
 	"bhojanalya/internal/auth"
 	"bhojanalya/internal/competition"
 	"bhojanalya/internal/db"
@@ -122,20 +122,35 @@ func main() {
 	// --------------------------------------------------
 	// RESTAURANT
 	// --------------------------------------------------
+// --------------------------------------------------
+// RESTAURANT
+// --------------------------------------------------
 	restaurantRepo := restaurant.NewPostgresRepository(pgDB)
 
-// competition repo (READ ONLY)
-competitionRepo := competition.NewRepository(pgDB)
+	// competition repo (READ ONLY)
+	competitionRepo := competition.NewRepository(pgDB)
 
-// restaurant service now needs BOTH
-restaurantService := restaurant.NewService(
-	restaurantRepo,
-	competitionRepo,
-)
+	// restaurant service
+	restaurantService := restaurant.NewService(
+		restaurantRepo,
+		competitionRepo,
+	)
 
-restaurantHandler := restaurant.NewHandler(restaurantService)
+	restaurantHandler := restaurant.NewHandler(restaurantService)
 
+	// --------------------------------------------------
+	// DEALS
+	// --------------------------------------------------
+	dealService := deals.NewService(
+		restaurantRepo, // implements core.RestaurantReader
+		competitionRepo,
+	)
 
+	dealHandler := deals.NewHandler(dealService)
+
+	// --------------------------------------------------
+	// ROUTES
+	// --------------------------------------------------
 	restaurantRoutes := r.Group("/restaurants")
 	restaurantRoutes.Use(
 		middleware.AuthMiddleware(),
@@ -144,6 +159,12 @@ restaurantHandler := restaurant.NewHandler(restaurantService)
 	{
 		restaurantRoutes.POST("", restaurantHandler.CreateRestaurant)
 		restaurantRoutes.GET("/me", restaurantHandler.ListMyRestaurants)
+
+		// 🔥 DEAL SUGGESTIONS
+		restaurantRoutes.GET(
+			"/:id/deals",
+			dealHandler.GetDealSuggestion(),
+		)
 	}
 
 	// --------------------------------------------------
