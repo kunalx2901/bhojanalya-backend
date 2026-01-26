@@ -1,6 +1,7 @@
 package restaurant
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,9 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
-// handler for creating a restaurant
+// --------------------------------------------------
+// Create restaurant
+// --------------------------------------------------
 func (h *Handler) CreateRestaurant(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name"`
@@ -27,7 +30,6 @@ func (h *Handler) CreateRestaurant(c *gin.Context) {
 		return
 	}
 
-	// 🔐 Extract user ID from JWT context
 	ownerID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
@@ -48,8 +50,9 @@ func (h *Handler) CreateRestaurant(c *gin.Context) {
 	c.JSON(http.StatusCreated, restaurant)
 }
 
-
-// get restaurants for the logged-in owner
+// --------------------------------------------------
+// List restaurants owned by user
+// --------------------------------------------------
 func (h *Handler) ListMyRestaurants(c *gin.Context) {
 	ownerID, exists := c.Get("userID")
 	if !exists {
@@ -64,4 +67,33 @@ func (h *Handler) ListMyRestaurants(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, restaurants)
+}
+
+// --------------------------------------------------
+// Get competitive insight for restaurant
+// --------------------------------------------------
+func (h *Handler) GetCompetitionInsight(c *gin.Context) {
+	var restaurantID int
+	if _, err := fmt.Sscanf(c.Param("id"), "%d", &restaurantID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid restaurant id"})
+		return
+	}
+
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	insight, err := h.service.GetCompetitiveInsight(
+		c.Request.Context(),
+		restaurantID,
+		userID.(string),
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, insight)
 }

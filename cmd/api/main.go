@@ -123,8 +123,18 @@ func main() {
 	// RESTAURANT
 	// --------------------------------------------------
 	restaurantRepo := restaurant.NewPostgresRepository(pgDB)
-	restaurantService := restaurant.NewService(restaurantRepo)
-	restaurantHandler := restaurant.NewHandler(restaurantService)
+
+// competition repo (READ ONLY)
+competitionRepo := competition.NewRepository(pgDB)
+
+// restaurant service now needs BOTH
+restaurantService := restaurant.NewService(
+	restaurantRepo,
+	competitionRepo,
+)
+
+restaurantHandler := restaurant.NewHandler(restaurantService)
+
 
 	restaurantRoutes := r.Group("/restaurants")
 	restaurantRoutes.Use(
