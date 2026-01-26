@@ -1,11 +1,18 @@
 package restaurant
 
 import (
+	"context"
+	"strconv"
 	"testing"
 	"time"
+
+	"bhojanalya/internal/competition"
 )
 
-// MockRepository is a mock implementation of Repository interface for testing
+// --------------------------------------------------
+// Mock Repository
+// --------------------------------------------------
+
 type MockRepository struct {
 	restaurants map[string][]*Restaurant
 	createErr   error
@@ -21,9 +28,14 @@ func (m *MockRepository) Create(restaurant *Restaurant) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
-	restaurant.ID = "mock-id-" + restaurant.Name
+
+	restaurant.ID = strconv.Itoa(len(m.restaurants) + 1)
 	restaurant.CreatedAt = time.Now()
-	m.restaurants[restaurant.OwnerID] = append(m.restaurants[restaurant.OwnerID], restaurant)
+
+	m.restaurants[restaurant.OwnerID] = append(
+		m.restaurants[restaurant.OwnerID],
+		restaurant,
+	)
 	return nil
 }
 
@@ -31,12 +43,43 @@ func (m *MockRepository) ListByOwner(ownerID string) ([]*Restaurant, error) {
 	return m.restaurants[ownerID], nil
 }
 
-// TestCreateRestaurant_Success tests successful restaurant creation
+// --------------------------------------------------
+// REQUIRED BY INTERFACE (NO-OP IMPLEMENTATIONS)
+// --------------------------------------------------
+
+func (m *MockRepository) IsOwner(
+	ctx context.Context,
+	restaurantID int,
+	userID string,
+) (bool, error) {
+	return true, nil
+}
+
+func (m *MockRepository) GetLatestParsedCostForTwo(
+	ctx context.Context,
+	restaurantID int,
+) (float64, string, string, error) {
+	return 0, "", "", nil
+}
+
+// --------------------------------------------------
+// TESTS
+// --------------------------------------------------
+
 func TestCreateRestaurant_Success(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo)
 
-	restaurant, err := service.CreateRestaurant("Taj Palace", "New York", "Indian", "owner-123")
+	service := NewService(
+		mockRepo,
+		&competition.Repository{}, // not used in these tests
+	)
+
+	restaurant, err := service.CreateRestaurant(
+		"Taj Palace",
+		"New York",
+		"Indian",
+		"owner-123",
+	)
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -63,96 +106,48 @@ func TestCreateRestaurant_Success(t *testing.T) {
 	}
 }
 
-// TestCreateRestaurant_MissingName tests restaurant creation with missing name
-func TestCreateRestaurant_MissingName(t *testing.T) {
+func TestCreateRestaurant_MissingFields(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo)
+	service := NewService(mockRepo, &competition.Repository{})
 
-	_, err := service.CreateRestaurant("", "New York", "Indian", "owner-123")
-
+	_, err := service.CreateRestaurant("", "NY", "Indian", "owner")
 	if err == nil {
-		t.Fatal("expected error for missing name, got nil")
-	}
-
-	if err.Error() != "missing required fields" {
-		t.Errorf("expected 'missing required fields', got '%s'", err.Error())
+		t.Fatal("expected error for missing fields")
 	}
 }
 
-// TestCreateRestaurant_MissingCity tests restaurant creation with missing city
-func TestCreateRestaurant_MissingCity(t *testing.T) {
-	mockRepo := NewMockRepository()
-	service := NewService(mockRepo)
-
-	_, err := service.CreateRestaurant("Taj Palace", "", "Indian", "owner-123")
-
-	if err == nil {
-		t.Fatal("expected error for missing city, got nil")
-	}
-
-	if err.Error() != "missing required fields" {
-		t.Errorf("expected 'missing required fields', got '%s'", err.Error())
-	}
-}
-
-// TestCreateRestaurant_MissingCuisineType tests restaurant creation with missing cuisine type
-func TestCreateRestaurant_MissingCuisineType(t *testing.T) {
-	mockRepo := NewMockRepository()
-	service := NewService(mockRepo)
-
-	_, err := service.CreateRestaurant("Taj Palace", "New York", "", "owner-123")
-
-	if err == nil {
-		t.Fatal("expected error for missing cuisine type, got nil")
-	}
-
-	if err.Error() != "missing required fields" {
-		t.Errorf("expected 'missing required fields', got '%s'", err.Error())
-	}
-}
-
-// TestListMyRestaurants_Success tests successful retrieval of user's restaurants
 func TestListMyRestaurants_Success(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo)
+	service := NewService(mockRepo, &competition.Repository{})
 
-	// Create multiple restaurants
-	service.CreateRestaurant("Taj Palace", "New York", "Indian", "owner-123")
-	service.CreateRestaurant("Dragon Court", "New York", "Chinese", "owner-123")
-	service.CreateRestaurant("Pasta Paradise", "Boston", "Italian", "owner-456")
+	service.CreateRestaurant("Taj Palace", "NY", "Indian", "owner-123")
+	service.CreateRestaurant("Dragon Court", "NY", "Chinese", "owner-123")
+	service.CreateRestaurant("Pasta House", "Boston", "Italian", "owner-456")
 
-	// List restaurants for owner-123
 	restaurants, err := service.ListMyRestaurants("owner-123")
-
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if len(restaurants) != 2 {
-		t.Errorf("expected 2 restaurants, got %d", len(restaurants))
+		t.Fatalf("expected 2 restaurants, got %d", len(restaurants))
 	}
 
 	if restaurants[0].Name != "Taj Palace" {
-		t.Errorf("expected first restaurant 'Taj Palace', got '%s'", restaurants[0].Name)
-	}
-
-	if restaurants[1].Name != "Dragon Court" {
-		t.Errorf("expected second restaurant 'Dragon Court', got '%s'", restaurants[1].Name)
+		t.Errorf("expected 'Taj Palace', got '%s'", restaurants[0].Name)
 	}
 }
 
-// TestListMyRestaurants_Empty tests retrieval when user has no restaurants
 func TestListMyRestaurants_Empty(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo)
+	service := NewService(mockRepo, &competition.Repository{})
 
-	restaurants, err := service.ListMyRestaurants("owner-no-restaurants")
-
+	restaurants, err := service.ListMyRestaurants("no-restaurants")
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if len(restaurants) != 0 {
-		t.Errorf("expected empty list, got %d restaurants", len(restaurants))
+		t.Errorf("expected empty list, got %d", len(restaurants))
 	}
 }

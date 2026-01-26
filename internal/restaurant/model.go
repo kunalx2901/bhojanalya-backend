@@ -11,3 +11,5 @@ type Restaurant struct {
 	Status      string
 	CreatedAt   time.Time
 }
+
+
