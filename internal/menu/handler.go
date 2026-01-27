@@ -36,32 +36,29 @@ func (h *Handler) Upload(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Convert to int
 	var restaurantID int
 	if _, err := fmt.Sscanf(restaurantIDStr, "%d", &restaurantID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid restaurant_id format. Must be a number",
+			"error":   "Invalid restaurant_id format. Must be a number",
 			"details": err.Error(),
 		})
 		return
 	}
-	
+
 	if restaurantID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "restaurant_id must be a positive number",
 		})
 		return
 	}
-	
+
 	// Optional: Verify user owns this restaurant (security check)
-	userID, exists := c.Get("userID")
-	if exists {
-		// You could add a check here to verify the user owns this restaurant
-		// For now, we'll just log it for debugging
+	if userID, exists := c.Get("user_id"); exists {
 		fmt.Printf("[UPLOAD] User %s uploading to restaurant %d\n", userID, restaurantID)
 	}
-	
+
 	file, header, err := c.Request.FormFile("menu_file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "menu_file is required"})
@@ -73,7 +70,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 
 	menuID, objectKey, err := h.service.UploadMenu(
 		c.Request.Context(),
@@ -99,23 +95,52 @@ func (h *Handler) Upload(c *gin.Context) {
 // Admin: view parsed menus pending approval
 // --------------------------------------------------
 func (h *AdminHandler) PendingMenus(c *gin.Context) {
-	// TODO (NEXT PHASE):
-	// Fetch menus where status = 'PARSED' AND approved_at IS NULL
-	c.JSON(http.StatusOK, gin.H{
-		"pending_menus": []gin.H{},
-	})
+	menus, err := h.service.GetPendingMenus(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, menus)
 }
 
 // --------------------------------------------------
 // Admin: approve menu
 // --------------------------------------------------
 func (h *AdminHandler) ApproveMenu(c *gin.Context) {
-	menuID := c.Param("id")
+	menuIDStr := c.Param("id")
 
-	// TODO (NEXT PHASE):
-	// Mark menu as approved and unlock deal suggestions
+	var menuID int
+	if _, err := fmt.Sscanf(menuIDStr, "%d", &menuID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid menu id",
+		})
+		return
+	}
+
+	adminID := c.GetString("userID")
+	if adminID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "admin user not found in context",
+		})
+		return
+	}
+
+	if err := h.service.ApproveMenu(
+		c.Request.Context(),
+		menuID,
+		adminID,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Menu approved",
+		"status":  "approved",
 		"menu_id": menuID,
 	})
 }

@@ -59,7 +59,7 @@ func (s *Service) UploadMenu(
 }
 
 // --------------------------------------------------
-// Parsed menu persistence (NEW, IMPORTANT)
+// Parsed menu persistence
 // --------------------------------------------------
 func (s *Service) SaveParsedResult(
 	menuUploadID int,
@@ -80,8 +80,6 @@ func (s *Service) SaveParsedResult(
 // --------------------------------------------------
 // Fetch menu context (city + cuisine)
 // --------------------------------------------------
-
-
 func (s *Service) GetMenuContext(
 	ctx context.Context,
 	menuUploadID int,
@@ -89,3 +87,32 @@ func (s *Service) GetMenuContext(
 	return s.repo.GetMenuContext(ctx, menuUploadID)
 }
 
+// --------------------------------------------------
+// ADMIN APPROVAL — FINAL PHASE
+// --------------------------------------------------
+
+// Get menus pending admin approval
+func (s *Service) GetPendingMenus(
+	ctx context.Context,
+) ([]MenuUpload, error) {
+	return s.repo.ListPending(ctx)
+}
+
+// Approve a parsed menu
+func (s *Service) ApproveMenu(
+	ctx context.Context,
+	menuID int,
+	adminID string,
+) error {
+	return s.repo.Approve(ctx, menuID, adminID)
+}
+
+// Reject a parsed menu
+func (s *Service) RejectMenu(
+	ctx context.Context,
+	menuID int,
+	adminID string,
+	reason string,
+) error {
+	return s.repo.Reject(ctx, menuID, adminID, reason)
+}
