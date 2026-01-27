@@ -76,3 +76,16 @@ func (s *Service) SaveParsedResult(
 
 	return s.repo.SaveParsedMenu(menuUploadID, doc)
 }
+
+// --------------------------------------------------
+// Fetch menu context (city + cuisine)
+// --------------------------------------------------
+
+
+func (s *Service) GetMenuContext(
+	ctx context.Context,
+	menuUploadID int,
+) (string, string, error) {
+	return s.repo.GetMenuContext(ctx, menuUploadID)
+}
+
