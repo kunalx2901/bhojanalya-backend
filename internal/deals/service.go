@@ -143,9 +143,9 @@ func (s *Service) GetDealSuggestion(
 	}, nil
 }
 
-// --------------------------------------------------
+// ---------------------------------------------
 // Create Deal (Restaurant action)
-// --------------------------------------------------
+// ----------------------------------------------
 func (s *Service) CreateDeal(
 	ctx context.Context,
 	userID string,
