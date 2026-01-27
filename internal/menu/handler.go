@@ -3,6 +3,7 @@ package menu
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -70,6 +71,7 @@ func (h *Handler) Upload(c *gin.Context) {
 	defer file.Close()
 
 	if err := ValidateFileExtension(header.Filename); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

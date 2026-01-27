@@ -37,7 +37,8 @@ func (r *Repository) FetchPending() (int, string, error) {
 	err = tx.QueryRow(ctx, `
 		SELECT id, image_url
 		FROM menu_uploads
-		WHERE status = 'MENU_UPLOADED'
+		WHERE status IN ('MENU_UPLOADED', 'OCR_FAILED', 'PARSING_FAILED')
+		  AND retry_count < 3
 		ORDER BY created_at
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
@@ -152,6 +153,9 @@ func (r *Repository) FetchForLLMParsing() (int, string, error) {
 //
 
 func (r *Repository) UpdateStatus(id int, status string, errMsg *string) error {
+	_, err := r.db.Exec(
+		context.Background(),
+		`
 	_, err := r.db.Exec(
 		context.Background(),
 		`

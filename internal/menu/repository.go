@@ -1,5 +1,7 @@
 package menu
 
+import "context"
+
 type Repository interface {
 	// Create a menu upload entry (raw menu file)
 	CreateUpload(
