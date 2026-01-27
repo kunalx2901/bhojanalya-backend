@@ -87,8 +87,6 @@ func (r *PostgresRepository) SaveParsedMenu(
 // --------------------------------------------------
 // Fetch city + cuisine for a menu upload
 // --------------------------------------------------
-
-
 func (r *PostgresRepository) GetMenuContext(
 	ctx context.Context,
 	menuUploadID int,
@@ -104,4 +102,84 @@ func (r *PostgresRepository) GetMenuContext(
 	`, menuUploadID).Scan(&city, &cuisine)
 
 	return
+}
+
+// --------------------------------------------------
+// ADMIN APPROVAL — FINAL PHASE
+// --------------------------------------------------
+
+// List menus that are parsed but not yet approved
+func (r *PostgresRepository) ListPending(
+	ctx context.Context,
+) ([]MenuUpload, error) {
+
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			id,
+			restaurant_id,
+			original_filename,
+			parsed_data
+		FROM menu_uploads
+		WHERE status = 'PARSED'
+		  AND approved_at IS NULL
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var menus []MenuUpload
+
+	for rows.Next() {
+		var m MenuUpload
+		err := rows.Scan(
+			&m.ID,
+			&m.RestaurantID,
+			&m.Filename,
+			&m.ParsedData,
+		)
+		if err != nil {
+			return nil, err
+		}
+		menus = append(menus, m)
+	}
+
+	return menus, nil
+}
+
+// Approve a parsed menu
+func (r *PostgresRepository) Approve(
+	ctx context.Context,
+	menuID int,
+	adminID string,
+) error {
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE menu_uploads
+		SET approved_at = now(),
+		    approved_by = $2
+		WHERE id = $1
+	`, menuID, adminID)
+
+	return err
+}
+
+// Reject a parsed menu with reason
+func (r *PostgresRepository) Reject(
+	ctx context.Context,
+	menuID int,
+	adminID string,
+	reason string,
+) error {
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE menu_uploads
+		SET status = 'REJECTED',
+		    approved_by = $2,
+		    rejection_reason = $3
+		WHERE id = $1
+	`, menuID, adminID, reason)
+
+	return err
 }
