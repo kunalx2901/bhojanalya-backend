@@ -207,6 +207,18 @@ dealRoutes.Use(
 	}
 
 	// --------------------------------------------------
+	// COMPETITION SERVICE
+	// --------------------------------------------------
+	competitionService := competition.NewService(pgDB)
+	competitionHandler := competition.NewHandler(competitionService)
+
+	// Admin only
+	admin.POST("/competition/recompute", competitionHandler.Recompute)
+
+	// Public / restaurant preview
+	r.GET("/competition/insights", competitionHandler.Get)
+
+	// --------------------------------------------------
 	// OCR + LLM SERVICES
 	// --------------------------------------------------
 	llmClient := llm.NewGeminiClient()
@@ -222,19 +234,10 @@ dealRoutes.Use(
 		r2Client,
 		llmClient,
 		menuService,
+		competitionService,
 	)
 
-	// --------------------------------------------------
-	// COMPETITION SERVICE
-	// --------------------------------------------------
-	competitionService := competition.NewService(pgDB)
-	competitionHandler := competition.NewHandler(competitionService)
-
-	// Admin only
-	admin.POST("/competition/recompute", competitionHandler.Recompute)
-
-	// Public / restaurant preview
-	r.GET("/competition/insights", competitionHandler.Get)
+	
 
 	// --------------------------------------------------
 	// 🚀 START WORKERS (CRITICAL FIX)

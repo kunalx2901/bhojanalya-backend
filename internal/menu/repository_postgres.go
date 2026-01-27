@@ -83,3 +83,25 @@ func (r *PostgresRepository) SaveParsedMenu(
 
 	return nil
 }
+
+// --------------------------------------------------
+// Fetch city + cuisine for a menu upload
+// --------------------------------------------------
+
+
+func (r *PostgresRepository) GetMenuContext(
+	ctx context.Context,
+	menuUploadID int,
+) (city string, cuisine string, err error) {
+
+	err = r.db.QueryRow(ctx, `
+		SELECT
+			r.city,
+			r.cuisine_type
+		FROM menu_uploads mu
+		JOIN restaurants r ON mu.restaurant_id = r.id
+		WHERE mu.id = $1
+	`, menuUploadID).Scan(&city, &cuisine)
+
+	return
+}
