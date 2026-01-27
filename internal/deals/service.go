@@ -72,3 +72,37 @@ func (s *Service) GetDealSuggestion(
 		Reason:               reason,
 	}, nil
 }
+
+// ---------------------------------------------
+// Create Deal (Restaurant action)
+// ----------------------------------------------
+func (s *Service) CreateDeal(
+	ctx context.Context,
+	userID string,
+	deal *Deal,
+) error {
+
+	// 🔒 Ownership check
+	ok, err := s.restaurantReader.IsOwner(ctx, deal.RestaurantID, userID)
+	if err != nil || !ok {
+		return errors.New("unauthorized")
+	}
+
+	// Workflow defaults
+	deal.Status = "PENDING_APPROVAL"
+	deal.Suggested = false
+
+	return s.repo.Create(ctx, deal)
+}
+
+
+func determinePosition(cost, median float64) string {
+	switch {
+	case cost < median*0.9:
+		return "UNDER_MARKET"
+	case cost > median*1.1:
+		return "PREMIUM"
+	default:
+		return "MARKET_AVERAGE"
+	}
+}
