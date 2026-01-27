@@ -13,6 +13,7 @@ import (
 	"bhojanalya/internal/llm"
 	"bhojanalya/internal/menu"
 	"bhojanalya/internal/storage"
+	"bhojanalya/internal/competition"
 )
 
 type Service struct {
@@ -20,7 +21,9 @@ type Service struct {
 	r2              *storage.R2Client
 	llmClient       *llm.GeminiClient
 	menuService     *menu.Service
+	competitionSvc  *competition.Service
 	pdfPreprocessor *PDFTextPreprocessor
+
 }
 
 func NewService(
@@ -28,12 +31,14 @@ func NewService(
 	r2 *storage.R2Client,
 	llmClient *llm.GeminiClient,
 	menuService *menu.Service,
+	competitionSvc *competition.Service,
 ) *Service {
 	return &Service{
 		repo:            repo,
 		r2:              r2,
 		llmClient:       llmClient,
 		menuService:     menuService,
+		competitionSvc:  competitionSvc,
 		pdfPreprocessor: NewPDFTextPreprocessor(),
 	}
 }
@@ -186,6 +191,19 @@ func (s *Service) processLLM() error {
 	log.Printf("[LLM][%d] Parsed menu saved", id)
 
 	_ = s.repo.UpdateStatus(id, "PARSED", nil)
+
+	city, cuisine, err := s.menuService.GetMenuContext(ctx, id)
+	if err != nil {
+		log.Printf("[COMPETITION][%d] Failed to get menu context: %v", id, err)
+		return nil
+	}
+
+	if err := s.competitionSvc.RecomputeSnapshot(ctx, city, cuisine); err != nil {
+		log.Printf(
+			"[COMPETITION][%d] Snapshot recompute failed for %s/%s: %v",
+			id, city, cuisine, err,
+		)
+	}
 	log.Printf("[PIPELINE][%d] Menu processing completed successfully ✅", id)
 
 	return nil
