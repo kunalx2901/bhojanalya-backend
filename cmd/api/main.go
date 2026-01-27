@@ -141,12 +141,27 @@ func main() {
 	// --------------------------------------------------
 	// DEALS
 	// --------------------------------------------------
-	dealService := deals.NewService(
-		restaurantRepo, // implements core.RestaurantReader
-		competitionRepo,
-	)
+	dealRepo := deals.NewRepository(pgDB)
 
-	dealHandler := deals.NewHandler(dealService)
+dealService := deals.NewService(
+	dealRepo,
+	restaurantRepo,   // core.RestaurantReader
+	competitionRepo,
+)
+
+dealHandler := deals.NewHandler(dealService)
+
+dealRoutes := r.Group("/restaurants/:id/deals")
+dealRoutes.Use(
+	middleware.AuthMiddleware(),
+	middleware.RequireRole("RESTAURANT"),
+)
+{
+	dealRoutes.GET("/suggestion", dealHandler.GetDealSuggestion())
+	dealRoutes.POST("", dealHandler.CreateDeal())
+}
+
+
 
 	// --------------------------------------------------
 	// ROUTES
