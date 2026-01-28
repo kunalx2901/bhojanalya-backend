@@ -73,10 +73,21 @@ func main() {
 	authService := auth.NewService(userRepo)
 	authHandler := auth.NewHandler(authService)
 
-	auth := r.Group("/auth")
+	authGroup := r.Group("/auth")
 	{
-		auth.POST("/register", authHandler.Register)
-		auth.POST("/login", authHandler.Login)
+		authGroup.POST("/register", authHandler.Register)
+		authGroup.POST("/login", authHandler.Login)
+
+		// 🔐 Protected auth routes
+		protected := authGroup.Group("/protected")
+		protected.Use(middleware.AuthMiddleware())
+		{
+			protected.GET("/ping", func(c *gin.Context) {
+				c.JSON(200, gin.H{
+					"message": "pong",
+				})
+			})
+		}
 	}
 
 	// ───────────────────────── CORE REPOS ─────────────────────────
@@ -118,11 +129,7 @@ func main() {
 	{
 		restaurants.POST("", restaurantHandler.CreateRestaurant)
 		restaurants.GET("/me", restaurantHandler.ListMyRestaurants)
-
-		// 🔥 Preview
 		restaurants.GET("/:id/preview", restaurantHandler.Preview)
-
-		// 🔥 Image upload
 		restaurants.POST("/:id/images", restaurantHandler.UploadImages)
 	}
 
