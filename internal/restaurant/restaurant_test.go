@@ -16,11 +16,13 @@ import (
 type MockRepository struct {
 	restaurants map[string][]*Restaurant
 	createErr   error
+	nextID      int
 }
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
 		restaurants: make(map[string][]*Restaurant),
+		nextID:      1,
 	}
 }
 
@@ -29,7 +31,8 @@ func (m *MockRepository) Create(restaurant *Restaurant) error {
 		return m.createErr
 	}
 
-	restaurant.ID = strconv.Itoa(len(m.restaurants) + 1)
+	restaurant.ID = "rest_" + strconv.Itoa(m.nextID)
+	m.nextID++
 	restaurant.CreatedAt = time.Now()
 
 	m.restaurants[restaurant.OwnerID] = append(
@@ -44,7 +47,7 @@ func (m *MockRepository) ListByOwner(ownerID string) ([]*Restaurant, error) {
 }
 
 // --------------------------------------------------
-// REQUIRED BY INTERFACE (NO-OP IMPLEMENTATIONS)
+// REQUIRED BY Repository INTERFACE (NO-OP)
 // --------------------------------------------------
 
 func (m *MockRepository) IsOwner(
@@ -62,6 +65,42 @@ func (m *MockRepository) GetLatestParsedCostForTwo(
 	return 0, "", "", nil
 }
 
+func (m *MockRepository) HasAnyDeal(
+	ctx context.Context,
+	restaurantID int,
+) (bool, error) {
+	return true, nil
+}
+
+func (m *MockRepository) GetPreviewData(
+	ctx context.Context,
+	restaurantID int,
+) (*PreviewData, error) {
+	return &PreviewData{
+		Name:        "Mock Restaurant",
+		City:        "Mock City",
+		CuisineType: "Mock Cuisine",
+		CostForTwo:  500,
+		Images:      []string{},
+	}, nil
+}
+
+// 🔥 REQUIRED IMAGE METHODS
+func (m *MockRepository) SaveRestaurantImages(
+	ctx context.Context,
+	restaurantID int,
+	images []string,
+) error {
+	return nil
+}
+
+func (m *MockRepository) GetRestaurantImages(
+	ctx context.Context,
+	restaurantID int,
+) ([]string, error) {
+	return []string{}, nil
+}
+
 // --------------------------------------------------
 // TESTS
 // --------------------------------------------------
@@ -71,7 +110,8 @@ func TestCreateRestaurant_Success(t *testing.T) {
 
 	service := NewService(
 		mockRepo,
-		&competition.Repository{}, // not used in these tests
+		&competition.Repository{},
+		nil,
 	)
 
 	restaurant, err := service.CreateRestaurant(
@@ -83,6 +123,10 @@ func TestCreateRestaurant_Success(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if restaurant.ID == "" {
+		t.Errorf("expected ID to be set")
 	}
 
 	if restaurant.Name != "Taj Palace" {
@@ -108,7 +152,7 @@ func TestCreateRestaurant_Success(t *testing.T) {
 
 func TestCreateRestaurant_MissingFields(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo, &competition.Repository{})
+	service := NewService(mockRepo, &competition.Repository{},nil)
 
 	_, err := service.CreateRestaurant("", "NY", "Indian", "owner")
 	if err == nil {
@@ -118,7 +162,7 @@ func TestCreateRestaurant_MissingFields(t *testing.T) {
 
 func TestListMyRestaurants_Success(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo, &competition.Repository{})
+	service := NewService(mockRepo, &competition.Repository{},nil)
 
 	service.CreateRestaurant("Taj Palace", "NY", "Indian", "owner-123")
 	service.CreateRestaurant("Dragon Court", "NY", "Chinese", "owner-123")
@@ -140,7 +184,7 @@ func TestListMyRestaurants_Success(t *testing.T) {
 
 func TestListMyRestaurants_Empty(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo, &competition.Repository{})
+	service := NewService(mockRepo, &competition.Repository{}, nil)
 
 	restaurants, err := service.ListMyRestaurants("no-restaurants")
 	if err != nil {

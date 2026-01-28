@@ -13,4 +13,12 @@ type Repository interface {
 		ctx context.Context,
 		restaurantID int,
 	) (float64, string, string, error)
+
+	// preview support
+	HasAnyDeal(ctx context.Context, restaurantID int) (bool, error)
+	GetPreviewData(ctx context.Context, restaurantID int) (*PreviewData, error)
+
+	// restaurant images
+	SaveRestaurantImages(ctx context.Context, restaurantID int, images []string) error
+	GetRestaurantImages(ctx context.Context, restaurantID int) ([]string, error)
 }

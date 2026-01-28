@@ -3,21 +3,30 @@ package restaurant
 import (
 	"context"
 	"errors"
+	"fmt"
+	"mime/multipart"
+	"path/filepath"
+	"strings"
+
 	"bhojanalya/internal/competition"
+	"bhojanalya/internal/storage"
 )
 
 type Service struct {
 	repo            Repository
 	competitionRepo *competition.Repository
+	r2              *storage.R2Client
 }
 
 func NewService(
 	repo Repository,
 	competitionRepo *competition.Repository,
+	r2 *storage.R2Client,
 ) *Service {
 	return &Service{
 		repo:            repo,
 		competitionRepo: competitionRepo,
+		r2:              r2,
 	}
 }
 
@@ -66,19 +75,13 @@ func (s *Service) GetCompetitiveInsight(
 	userID string,
 ) (*CompetitiveInsight, error) {
 
-	// 🔒 Ownership enforced here
 	isOwner, err := s.repo.IsOwner(ctx, restaurantID, userID)
-	if err != nil {
-		return nil, err
-	}
-	if !isOwner {
+	if err != nil || !isOwner {
 		return nil, errors.New("unauthorized")
 	}
 
-	cost, city, cuisine, err := s.repo.GetLatestParsedCostForTwo(
-		ctx,
-		restaurantID,
-	)
+	cost, city, cuisine, err :=
+		s.repo.GetLatestParsedCostForTwo(ctx, restaurantID)
 	if err != nil {
 		return nil, errors.New("no parsed menu available")
 	}
@@ -103,8 +106,80 @@ func (s *Service) GetCompetitiveInsight(
 }
 
 // --------------------------------------------------
-// Positioning logic
+// Upload restaurant images
 // --------------------------------------------------
+func (s *Service) UploadImages(
+	ctx context.Context,
+	restaurantID int,
+	userID string,
+	files []*multipart.FileHeader,
+) error {
+
+	// 🔒 Ownership check
+	ok, err := s.repo.IsOwner(ctx, restaurantID, userID)
+	if err != nil || !ok {
+		return errors.New("unauthorized")
+	}
+
+	var imageURLs []string
+
+	for _, file := range files {
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			return errors.New("only jpg, jpeg, png images allowed")
+		}
+
+		key := fmt.Sprintf(
+			"restaurants/%d/%s",
+			restaurantID,
+			file.Filename,
+		)
+
+		url, err := storage.UploadMultipartFile(
+			ctx,
+			s.r2.GetClient(),
+			s.r2.GetBucket(),
+			key,
+			file,
+		)
+		if err != nil {
+			return err
+		}
+
+		imageURLs = append(imageURLs, url)
+	}
+
+	return s.repo.SaveRestaurantImages(ctx, restaurantID, imageURLs)
+}
+
+// --------------------------------------------------
+// Preview (only after deal creation)
+// --------------------------------------------------
+func (s *Service) GetPreview(
+	ctx context.Context,
+	restaurantID int,
+	userID string,
+) (*PreviewData, error) {
+
+	// 🔒 Ownership
+	ok, err := s.repo.IsOwner(ctx, restaurantID, userID)
+	if err != nil || !ok {
+		return nil, errors.New("unauthorized")
+	}
+
+	// 🔒 Must have at least one deal
+	hasDeal, err := s.repo.HasAnyDeal(ctx, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+	if !hasDeal {
+		return nil, errors.New("preview unavailable until at least one deal exists")
+	}
+
+	return s.repo.GetPreviewData(ctx, restaurantID)
+}
+
+
 func determinePosition(cost, median float64) string {
 	switch {
 	case cost < median*0.9:
@@ -115,4 +190,3 @@ func determinePosition(cost, median float64) string {
 		return "MARKET_AVERAGE"
 	}
 }
-
