@@ -140,3 +140,166 @@ func (r *PostgresRepository) IsOwner(
 
 	return exists, err
 }
+
+// preview a restaurant's data
+func (r *PostgresRepository) GetPreviewData(
+	ctx context.Context,
+	restaurantID int,
+) (*PreviewData, error) {
+
+	var p PreviewData
+	p.ID = restaurantID
+
+	// 1️⃣ Restaurant core
+	err := r.db.QueryRow(ctx, `
+		SELECT name, city, cuisine_type
+		FROM restaurants
+		WHERE id = $1
+	`, restaurantID).Scan(
+		&p.Name,
+		&p.City,
+		&p.CuisineType,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2️⃣ Cost for two
+	_ = r.db.QueryRow(ctx, `
+		SELECT
+			(parsed_data->'cost_for_two'->'calculation'->>'total_cost_for_two')::numeric
+		FROM menu_uploads
+		WHERE restaurant_id = $1
+		  AND status = 'PARSED'
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, restaurantID).Scan(&p.CostForTwo)
+
+	// 3️⃣ Images
+	imgRows, _ := r.db.Query(ctx, `
+		SELECT image_url
+		FROM restaurant_images
+		WHERE restaurant_id = $1
+		ORDER BY created_at
+	`, restaurantID)
+	defer imgRows.Close()
+
+	for imgRows.Next() {
+		var url string
+		imgRows.Scan(&url)
+		p.Images = append(p.Images, url)
+	}
+
+	// 4️⃣ Menu PDFs
+	pdfRows, _ := r.db.Query(ctx, `
+		SELECT image_url
+		FROM menu_uploads
+		WHERE restaurant_id = $1
+		ORDER BY created_at DESC
+	`, restaurantID)
+	defer pdfRows.Close()
+
+	for pdfRows.Next() {
+		var pdf string
+		pdfRows.Scan(&pdf)
+		p.MenuPDFs = append(p.MenuPDFs, pdf)
+	}
+
+	// 5️⃣ Deals
+	dealRows, _ := r.db.Query(ctx, `
+		SELECT id, title, type, category, discount_value, status
+		FROM deals
+		WHERE restaurant_id = $1
+		ORDER BY created_at DESC
+	`, restaurantID)
+	defer dealRows.Close()
+
+	for dealRows.Next() {
+		var d PreviewDeal
+		dealRows.Scan(
+			&d.ID,
+			&d.Title,
+			&d.Type,
+			&d.Category,
+			&d.DiscountValue,
+			&d.Status,
+		)
+		p.Deals = append(p.Deals, d)
+	}
+
+	return &p, nil
+}
+
+
+
+func (r *PostgresRepository) HasAnyDeal(
+	ctx context.Context,
+	restaurantID int,
+) (bool, error) {
+
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM deals
+			WHERE restaurant_id = $1
+		)
+	`, restaurantID).Scan(&exists)
+
+	return exists, err
+}
+
+
+func (r *PostgresRepository) SaveRestaurantImages(
+	ctx context.Context,
+	restaurantID int,
+	images []string,
+) error {
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, url := range images {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO restaurant_images (restaurant_id, image_url)
+			VALUES ($1, $2)
+		`, restaurantID, url)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresRepository) GetRestaurantImages(
+	ctx context.Context,
+	restaurantID int,
+) ([]string, error) {
+
+	rows, err := r.db.Query(ctx, `
+		SELECT image_url
+		FROM restaurant_images
+		WHERE restaurant_id = $1
+		ORDER BY created_at
+	`, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var images []string
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		images = append(images, url)
+	}
+
+	return images, nil
+}
