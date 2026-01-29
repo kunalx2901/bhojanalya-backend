@@ -148,6 +148,12 @@ func main() {
 	menus.Use(middleware.AuthMiddleware())
 	{
 		menus.POST("/upload", menuHandler.Upload)
+
+			// ✅ STATUS POLLING (Feature-1)
+		menus.GET("/:restaurant_id/status", menuHandler.GetMenuStatus)
+
+		// ✅ RETRY FAILED MENU (Feature-2)
+		menus.POST("/:restaurant_id/retry", menuHandler.RetryMenu)
 	}
 
 	// ───────────────────────── ADMIN ROUTES ─────────────────────────
