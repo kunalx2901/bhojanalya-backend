@@ -3,14 +3,18 @@ package restaurant
 import "time"
 
 type Restaurant struct {
-	ID          string
-	Name        string
-	City        string
-	CuisineType string
-	OwnerID     string
-	Status      string
-	CreatedAt   time.Time
+	ID               string
+	Name             string
+	City             string
+	CuisineType      string
+	OwnerID          string
+	Status           string
+	ShortDescription string
+	OpensAt          string
+	ClosesAt         string
+	CreatedAt        time.Time
 }
+
 
 type PreviewData struct {
 	ID            int      `json:"id"`
@@ -31,5 +35,17 @@ type PreviewDeal struct {
 	Category      *string `json:"category,omitempty"`
 	DiscountValue float64 `json:"discount_value"`
 	Status        string  `json:"status"`
+}
+
+
+type AdminRestaurantDetails struct {
+	ID               int
+	Email            string
+	OwnerName        string
+	CuisineType      string
+	City             string
+	ShortDescription string
+	OpensAt          string
+	ClosesAt         string
 }
 

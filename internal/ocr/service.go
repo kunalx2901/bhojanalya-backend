@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"bhojanalya/internal/competition"
 	"bhojanalya/internal/llm"
 	"bhojanalya/internal/menu"
 	"bhojanalya/internal/storage"
-	"bhojanalya/internal/competition"
 )
 
 type Service struct {
@@ -24,7 +24,6 @@ type Service struct {
 	menuService     *menu.Service
 	competitionSvc  *competition.Service
 	pdfPreprocessor *PDFTextPreprocessor
-
 }
 
 func NewService(
@@ -44,11 +43,9 @@ func NewService(
 	}
 }
 
-//
 // ─────────────────────────────────────────────
 // OCR WORKER
 // ─────────────────────────────────────────────
-//
 
 func (s *Service) RunOCRWorker() {
 	log.Println("[OCR WORKER] Started")
@@ -64,14 +61,19 @@ func (s *Service) RunOCRWorker() {
 }
 
 func (s *Service) processOCR() error {
-	log.Println("[OCR] Checking MENU_UPLOADED rows")
-
 	id, objectKey, err := s.repo.FetchPending()
 	if err != nil || id == 0 {
 		return nil
 	}
+	restaurantID, err := s.repo.GetRestaurantID(id)
+	if err != nil {
+		msg := err.Error()
+		_ = s.repo.UpdateStatus(id, "OCR_FAILED", &msg)
+		return nil
+	}
 
-	log.Printf("[OCR][%d] Picked %s", id, objectKey)
+
+	log.Printf("[OCR][%d] Processing restaurant %d", id,restaurantID)
 	_ = s.repo.UpdateStatus(id, "OCR_PROCESSING", nil)
 
 	ext := strings.ToLower(filepath.Ext(objectKey))
@@ -107,25 +109,19 @@ func (s *Service) processOCR() error {
 		return nil
 	}
 
-	log.Printf("[OCR][%d] OCR extracted successfully", id)
-
 	if err := s.repo.SaveOCRText(id, text); err != nil {
 		return err
 	}
 
-	if err := s.repo.UpdateStatus(id, "OCR_DONE", nil); err != nil {
-	return err
+	_ = s.repo.UpdateStatus(id, "OCR_DONE", nil)
+	log.Printf("[OCR][%d] OCR completed", id)
+
+	return nil
 }
 
-log.Printf("[OCR][%d] OCR completed and status set to OCR_DONE", id)
-return nil
-}
-
-//
 // ─────────────────────────────────────────────
-// LLM + COST-FOR-TWO WORKER
+// LLM WORKER (ATOMIC PARSING)
 // ─────────────────────────────────────────────
-//
 
 func (s *Service) RunLLMWorker() {
 	log.Println("[LLM WORKER] Started")
@@ -147,8 +143,14 @@ func (s *Service) processLLM() error {
 	if err != nil || id == 0 {
 		return nil
 	}
+	restaurantID, err := s.repo.GetRestaurantID(id)
+	if err != nil {
+		s.failParsing(id, 0, err)
+		return nil
+	}
 
-	log.Printf("[LLM][%d] LLM parsing started", id)
+
+	log.Printf("[LLM][%d] Parsing restaurant %d", id, restaurantID)
 	_ = s.repo.UpdateStatus(id, "PARSING_LLM", nil)
 
 	textToParse := rawText
@@ -158,63 +160,63 @@ func (s *Service) processLLM() error {
 
 	rawJSON, err := s.llmClient.ParseOCR(ctx, textToParse)
 	if err != nil {
-		msg := err.Error()
-		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		s.failParsing(id, restaurantID, err)
 		return nil
 	}
 
 	parsedOCR, err := llm.ParseLLMResponse(rawJSON)
 	if err != nil {
-		msg := err.Error()
-		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		s.failParsing(id, restaurantID, err)
 		return nil
 	}
-
-	log.Printf("[LLM][%d] LLM parsed OCR successfully", id)
 
 	parsedMenu := toParsedMenu(parsedOCR)
 
 	cost, err := menu.BuildCostForTwo(parsedMenu)
 	if err != nil {
-		msg := err.Error()
-		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+		s.failParsing(id, restaurantID, err)
 		return nil
 	}
 
-	log.Printf("[LLM][%d] Cost-for-two calculated and saved", id)
-
-	if err := s.menuService.SaveParsedResult(id, parsedMenu, cost); err != nil {
-		msg := err.Error()
-		_ = s.repo.UpdateStatus(id, "PARSING_FAILED", &msg)
+	// 🔒 ATOMIC WRITE — THIS IS THE FIX
+	if err := s.menuService.SaveParsedResult(
+		ctx,
+		restaurantID,
+		parsedMenu,
+		cost,
+	); err != nil {
+		s.failParsing(id, restaurantID, err)
 		return nil
 	}
-
-	log.Printf("[LLM][%d] Parsed menu saved", id)
 
 	_ = s.repo.UpdateStatus(id, "PARSED", nil)
 
-	city, cuisine, err := s.menuService.GetMenuContext(ctx, id)
-	if err != nil {
-		log.Printf("[COMPETITION][%d] Failed to get menu context: %v", id, err)
-		return nil
+	city, cuisine, err := s.menuService.GetMenuContext(ctx, restaurantID)
+	if err == nil {
+		_ = s.competitionSvc.RecomputeSnapshot(ctx, city, cuisine)
 	}
 
-	if err := s.competitionSvc.RecomputeSnapshot(ctx, city, cuisine); err != nil {
-		log.Printf(
-			"[COMPETITION][%d] Snapshot recompute failed for %s/%s: %v",
-			id, city, cuisine, err,
-		)
-	}
-	log.Printf("[PIPELINE][%d] Menu processing completed successfully ✅", id)
-
+	log.Printf("[PIPELINE][%d] Menu parsed successfully ✅", id)
 	return nil
 }
 
-//
+func (s *Service) failParsing(
+	menuID int,
+	restaurantID int,
+	err error,
+) {
+	msg := err.Error()
+	_ = s.repo.UpdateStatus(menuID, "PARSING_FAILED", &msg)
+	_ = s.menuService.MarkParsingFailed(
+		context.Background(),
+		restaurantID,
+		msg,
+	)
+}
+
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
-//
 
 func toParsedMenu(ocr *llm.ParsedOCRResult) *menu.ParsedMenu {
 	items := make([]menu.Item, 0, len(ocr.Items))
@@ -271,12 +273,4 @@ func (s *Service) processPDFtoOCR(id int, pdfPath string) (string, error) {
 	}
 
 	return b.String(), nil
-}
-
-func (s *Service) DebugPDFText(text string) string {
-	if s.pdfPreprocessor.IsLikelyPDFText(text) {
-		cleaned := s.pdfPreprocessor.CleanPDFText(text)
-		return cleaned
-	}
-	return text
 }

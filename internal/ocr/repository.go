@@ -229,3 +229,15 @@ func (r *Repository) LogState(id int) {
 
 	log.Printf("📌 menu_uploads[%d] status = %s", id, status)
 }
+
+
+func (r *Repository) GetRestaurantID(menuID int) (int, error) {
+	var restaurantID int
+	err := r.db.QueryRow(
+		context.Background(),
+		`SELECT restaurant_id FROM menu_uploads WHERE id = $1`,
+		menuID,
+	).Scan(&restaurantID)
+
+	return restaurantID, err
+}

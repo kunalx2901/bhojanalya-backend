@@ -2,6 +2,7 @@ package menu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"path/filepath"
@@ -24,16 +25,19 @@ func NewService(repo Repository, storage Storage) *Service {
 }
 
 // --------------------------------------------------
-// Upload (unchanged)
+// Upload Menu (ONE MENU PER RESTAURANT)
 // --------------------------------------------------
 func (s *Service) UploadMenu(
 	ctx context.Context,
 	restaurantID int,
 	file multipart.File,
 	filename string,
-) (int, string, error) {
+) (string, error) {
 
 	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		return "", errors.New("invalid file")
+	}
 
 	key := fmt.Sprintf(
 		"menus/%d/%s%s",
@@ -43,29 +47,39 @@ func (s *Service) UploadMenu(
 	)
 
 	if _, err := s.storage.Upload(ctx, key, file); err != nil {
-		return 0, "", err
+		return "", err
 	}
 
-	menuUploadID, err := s.repo.CreateUpload(
+	_, status, err := s.repo.UpsertUpload(
+		ctx,
 		restaurantID,
 		key,
 		filename,
 	)
 	if err != nil {
-		return 0, "", err
+		return "", err
 	}
 
-	return menuUploadID, key, nil
+	if status == "PARSED" {
+		return "", errors.New("menu already parsed and locked")
+	}
+
+	return key, nil
 }
 
 // --------------------------------------------------
-// Parsed menu persistence
+// Persist Parsed Menu (ATOMIC)
 // --------------------------------------------------
 func (s *Service) SaveParsedResult(
-	menuUploadID int,
+	ctx context.Context,
+	restaurantID int,
 	menu *ParsedMenu,
 	cost *CostForTwo,
 ) error {
+
+	if menu == nil || cost == nil {
+		return errors.New("invalid parsed menu data")
+	}
 
 	doc := map[string]interface{}{
 		"items":        menu.Items,
@@ -74,17 +88,28 @@ func (s *Service) SaveParsedResult(
 		"version":      "v1",
 	}
 
-	return s.repo.SaveParsedMenu(menuUploadID, doc)
+	return s.repo.MarkParsed(ctx, restaurantID, doc)
 }
 
 // --------------------------------------------------
-// Fetch menu context (city + cuisine)
+// Mark Parsing Failure (SAFE RETRY)
+// --------------------------------------------------
+func (s *Service) MarkParsingFailed(
+	ctx context.Context,
+	restaurantID int,
+	reason string,
+) error {
+	return s.repo.MarkFailed(ctx, restaurantID, reason)
+}
+
+// --------------------------------------------------
+// Fetch Menu Context (city + cuisine)
 // --------------------------------------------------
 func (s *Service) GetMenuContext(
 	ctx context.Context,
-	menuUploadID int,
+	restaurantID int,
 ) (string, string, error) {
-	return s.repo.GetMenuContext(ctx, menuUploadID)
+	return s.repo.GetMenuContext(ctx, restaurantID)
 }
 
 // --------------------------------------------------
@@ -98,21 +123,21 @@ func (s *Service) GetPendingMenus(
 	return s.repo.ListPending(ctx)
 }
 
-// Approve a parsed menu
+// Approve a parsed menu (ADMIN)
 func (s *Service) ApproveMenu(
 	ctx context.Context,
-	menuID int,
+	restaurantID int,
 	adminID string,
 ) error {
-	return s.repo.Approve(ctx, menuID, adminID)
+	return s.repo.Approve(ctx, restaurantID, adminID)
 }
 
-// Reject a parsed menu
+// Reject a parsed menu (ADMIN)
 func (s *Service) RejectMenu(
 	ctx context.Context,
-	menuID int,
+	restaurantID int,
 	adminID string,
 	reason string,
 ) error {
-	return s.repo.Reject(ctx, menuID, adminID, reason)
+	return s.repo.Reject(ctx, restaurantID, adminID, reason)
 }
