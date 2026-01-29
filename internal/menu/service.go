@@ -141,3 +141,12 @@ func (s *Service) RejectMenu(
 ) error {
 	return s.repo.Reject(ctx, restaurantID, adminID, reason)
 }
+
+
+func (s *Service) ApproveRestaurant(
+	ctx context.Context,
+	restaurantID int,
+	adminID string,
+) error {
+	return s.repo.ApproveByRestaurant(ctx, restaurantID, adminID)
+}

@@ -229,3 +229,33 @@ func (h *Handler) Preview(c *gin.Context) {
 
 	c.JSON(http.StatusOK, data)
 }
+
+
+// to get the restaurant approved by the admin 
+func (h *Handler) ApproveRestaurant(c *gin.Context) {
+	var restaurantID int
+	if _, err := fmt.Sscanf(c.Param("id"), "%d", &restaurantID); err != nil {
+		c.JSON(400, gin.H{"error": "invalid restaurant id"})
+		return
+	}
+
+	adminID := c.GetString("userID")
+	if adminID == "" {
+		c.JSON(401, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	if err := h.service.ApproveRestaurant(
+		c.Request.Context(),
+		restaurantID,
+		adminID,
+	); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message":       "restaurant, menu, and deals approved",
+		"restaurant_id": restaurantID,
+	})
+}

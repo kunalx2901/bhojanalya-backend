@@ -15,7 +15,6 @@ import (
 
 type MockRepository struct {
 	restaurants map[string][]*Restaurant
-	createErr   error
 	nextID      int
 }
 
@@ -26,11 +25,11 @@ func NewMockRepository() *MockRepository {
 	}
 }
 
-func (m *MockRepository) Create(restaurant *Restaurant) error {
-	if m.createErr != nil {
-		return m.createErr
-	}
+// --------------------------------------------------
+// CORE METHODS
+// --------------------------------------------------
 
+func (m *MockRepository) Create(restaurant *Restaurant) error {
 	restaurant.ID = strconv.Itoa(m.nextID)
 	m.nextID++
 	restaurant.CreatedAt = time.Now()
@@ -47,7 +46,7 @@ func (m *MockRepository) ListByOwner(ownerID string) ([]*Restaurant, error) {
 }
 
 // --------------------------------------------------
-// REQUIRED BY Repository INTERFACE (NO-OP)
+// OWNERSHIP & COMPETITION (NO-OP)
 // --------------------------------------------------
 
 func (m *MockRepository) IsOwner(
@@ -62,8 +61,12 @@ func (m *MockRepository) GetLatestParsedCostForTwo(
 	ctx context.Context,
 	restaurantID int,
 ) (float64, string, string, error) {
-	return 0, "", "", nil
+	return 500, "Test City", "Indian", nil
 }
+
+// --------------------------------------------------
+// PREVIEW & DEALS (NO-OP)
+// --------------------------------------------------
 
 func (m *MockRepository) HasAnyDeal(
 	ctx context.Context,
@@ -77,13 +80,20 @@ func (m *MockRepository) GetPreviewData(
 	restaurantID int,
 ) (*PreviewData, error) {
 	return &PreviewData{
+		ID:          restaurantID,
 		Name:        "Mock Restaurant",
 		City:        "Mock City",
 		CuisineType: "Mock Cuisine",
 		CostForTwo:  500,
 		Images:      []string{},
+		MenuPDFs:    []string{},
+		Deals:       []PreviewDeal{},
 	}, nil
 }
+
+// --------------------------------------------------
+// IMAGE METHODS
+// --------------------------------------------------
 
 func (m *MockRepository) SaveRestaurantImages(
 	ctx context.Context,
@@ -100,7 +110,10 @@ func (m *MockRepository) GetRestaurantImages(
 	return []string{}, nil
 }
 
-// 🔥 ADMIN METHODS (NEW, REQUIRED)
+// --------------------------------------------------
+// ADMIN METHODS (REQUIRED BY INTERFACE)
+// --------------------------------------------------
+
 func (m *MockRepository) ListApproved(
 	ctx context.Context,
 ) ([]*Restaurant, error) {
@@ -115,9 +128,17 @@ func (m *MockRepository) GetAdminDetails(
 		ID:          restaurantID,
 		Email:       "owner@test.com",
 		OwnerName:   "Test Owner",
-		CuisineType:"Indian",
+		CuisineType: "Indian",
 		City:        "Test City",
 	}, nil
+}
+
+func (m *MockRepository) ApproveRestaurant(
+	ctx context.Context,
+	restaurantID int,
+	adminID string,
+) error {
+	return nil
 }
 
 // --------------------------------------------------
@@ -129,6 +150,7 @@ func TestCreateRestaurant_Success(t *testing.T) {
 
 	service := NewService(
 		mockRepo,
+		nil, // menuService not needed for this test
 		&competition.Repository{},
 		nil,
 	)
@@ -158,7 +180,13 @@ func TestCreateRestaurant_Success(t *testing.T) {
 
 func TestCreateRestaurant_MissingFields(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo, &competition.Repository{}, nil)
+
+	service := NewService(
+		mockRepo,
+		nil,
+		&competition.Repository{},
+		nil,
+	)
 
 	_, err := service.CreateRestaurant(
 		"",
@@ -169,6 +197,7 @@ func TestCreateRestaurant_MissingFields(t *testing.T) {
 		"",
 		"owner",
 	)
+
 	if err == nil {
 		t.Fatal("expected error for missing fields")
 	}
@@ -176,7 +205,13 @@ func TestCreateRestaurant_MissingFields(t *testing.T) {
 
 func TestListMyRestaurants_Success(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo, &competition.Repository{}, nil)
+
+	service := NewService(
+		mockRepo,
+		nil,
+		&competition.Repository{},
+		nil,
+	)
 
 	service.CreateRestaurant("Taj Palace", "NY", "Indian", "", "", "", "owner-123")
 	service.CreateRestaurant("Dragon Court", "NY", "Chinese", "", "", "", "owner-123")
@@ -194,7 +229,13 @@ func TestListMyRestaurants_Success(t *testing.T) {
 
 func TestListMyRestaurants_Empty(t *testing.T) {
 	mockRepo := NewMockRepository()
-	service := NewService(mockRepo, &competition.Repository{}, nil)
+
+	service := NewService(
+		mockRepo,
+		nil,
+		&competition.Repository{},
+		nil,
+	)
 
 	restaurants, err := service.ListMyRestaurants("no-restaurants")
 	if err != nil {

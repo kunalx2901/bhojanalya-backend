@@ -44,5 +44,11 @@ type Repository interface {
 	ListPending(ctx context.Context) ([]MenuUpload, error)
 	Approve(ctx context.Context, restaurantID int, adminID string) error
 	Reject(ctx context.Context, restaurantID int, adminID string, reason string) error
+	ApproveByRestaurant(
+	ctx context.Context,
+	restaurantID int,
+	adminID string,
+	) error
+
 }
 

@@ -8,28 +8,32 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
+	"bhojanalya/internal/menu"
 	"bhojanalya/internal/competition"
 	"bhojanalya/internal/storage"
 )
 
 type Service struct {
 	repo            Repository
+	menuService     *menu.Service
 	competitionRepo *competition.Repository
 	r2              *storage.R2Client
 }
 
 func NewService(
 	repo Repository,
+	menuService *menu.Service,
 	competitionRepo *competition.Repository,
 	r2 *storage.R2Client,
 ) *Service {
 	return &Service{
 		repo:            repo,
+		menuService:     menuService,
 		competitionRepo: competitionRepo,
 		r2:              r2,
 	}
 }
+
 
 // --------------------------------------------------
 // Create restaurant (with description + timings)
@@ -243,3 +247,16 @@ func determinePosition(cost, median float64) string {
 		return "MARKET_AVERAGE"
 	}
 }
+
+// --------------------------------------------------
+// ADMIN: Approve restaurant (menu + restaurant + deals)
+// --------------------------------------------------
+func (s *Service) ApproveRestaurant(
+	ctx context.Context,
+	restaurantID int,
+	adminID string,
+) error {
+	// Delegate to menu approval logic
+	return s.menuService.ApproveRestaurant(ctx, restaurantID, adminID)
+}
+

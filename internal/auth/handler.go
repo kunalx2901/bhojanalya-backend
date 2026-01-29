@@ -71,6 +71,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "login successful",
+		"name":	user.Name,
 		"email":   user.Email,
 		"token":   token,
 	})
