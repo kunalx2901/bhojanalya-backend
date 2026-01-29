@@ -18,6 +18,44 @@ func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 }
 
 // --------------------------------------------------
+// GET MENU STATUS
+// --------------------------------------------------
+
+type MenuStatus struct {
+	Status string
+	Reason *string
+}
+
+func (r *PostgresRepository) GetMenuStatus(
+	ctx context.Context,
+	restaurantID int,
+) (*MenuStatus, error) {
+
+	var status string
+	var reason *string
+
+	err := r.db.QueryRow(ctx, `
+		SELECT status, rejection_reason
+		FROM menu_uploads
+		WHERE restaurant_id = $1
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, restaurantID).Scan(&status, &reason)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("no menu uploaded")
+		}
+		return nil, err
+	}
+
+	return &MenuStatus{
+		Status: status,
+		Reason: reason,
+	}, nil
+}
+
+// --------------------------------------------------
 // UPSERT MENU UPLOAD (ONE MENU PER RESTAURANT)
 // --------------------------------------------------
 func (r *PostgresRepository) UpsertUpload(
@@ -52,6 +90,7 @@ func (r *PostgresRepository) UpsertUpload(
 			    original_filename = $2,
 			    status = 'MENU_UPLOADED',
 			    parsed_data = NULL,
+			    rejection_reason = NULL,
 			    updated_at = now()
 			WHERE restaurant_id = $3
 		`, objectKey, filename, restaurantID)
@@ -137,6 +176,35 @@ func (r *PostgresRepository) MarkFailed(
 	`, reason, restaurantID)
 
 	return err
+}
+
+// --------------------------------------------------
+// RETRY FAILED MENU (SAFE RESET)
+// --------------------------------------------------
+func (r *PostgresRepository) RetryFailedMenu(
+	ctx context.Context,
+	restaurantID int,
+) error {
+
+	cmd, err := r.db.Exec(ctx, `
+		UPDATE menu_uploads
+		SET status = 'MENU_UPLOADED',
+		    parsed_data = NULL,
+		    rejection_reason = NULL,
+		    updated_at = now()
+		WHERE restaurant_id = $1
+		  AND status = 'FAILED'
+	`, restaurantID)
+
+	if err != nil {
+		return err
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return errors.New("menu not in FAILED state or not found")
+	}
+
+	return nil
 }
 
 // --------------------------------------------------
@@ -261,7 +329,6 @@ func (r *PostgresRepository) Approve(
 
 	return tx.Commit(ctx)
 }
-
 
 // Reject menu (ADMIN)
 func (r *PostgresRepository) Reject(

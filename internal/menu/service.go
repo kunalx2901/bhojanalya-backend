@@ -103,6 +103,46 @@ func (s *Service) MarkParsingFailed(
 }
 
 // --------------------------------------------------
+// Retry Failed Menu (EXPLICIT)
+// --------------------------------------------------
+func (s *Service) RetryFailedMenu(
+	ctx context.Context,
+	restaurantID int,
+) error {
+	return s.repo.RetryFailedMenu(ctx, restaurantID)
+}
+
+// --------------------------------------------------
+// Menu Status (FRONTEND POLLING)
+// --------------------------------------------------
+type MenuStatusResponse struct {
+	RestaurantID int     `json:"restaurant_id"`
+	Status       string  `json:"status"`
+	Error        *string `json:"error"`
+	CanRetry     bool    `json:"can_retry"`
+}
+
+func (s *Service) GetMenuStatus(
+	ctx context.Context,
+	restaurantID int,
+) (*MenuStatusResponse, error) {
+
+	status, err := s.repo.GetMenuStatus(ctx, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+
+	canRetry := status.Status == "FAILED" || status.Status == "OCR_FAILED"
+
+	return &MenuStatusResponse{
+		RestaurantID: restaurantID,
+		Status:       status.Status,
+		Error:        status.Reason,
+		CanRetry:     canRetry,
+	}, nil
+}
+
+// --------------------------------------------------
 // Fetch Menu Context (city + cuisine)
 // --------------------------------------------------
 func (s *Service) GetMenuContext(
@@ -141,7 +181,6 @@ func (s *Service) RejectMenu(
 ) error {
 	return s.repo.Reject(ctx, restaurantID, adminID, reason)
 }
-
 
 func (s *Service) ApproveRestaurant(
 	ctx context.Context,

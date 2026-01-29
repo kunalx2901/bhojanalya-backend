@@ -27,7 +27,6 @@ func NewAdminHandler(service *Service) *AdminHandler {
 // Restaurant uploads menu
 // --------------------------------------------------
 func (h *Handler) Upload(c *gin.Context) {
-	// Get restaurant_id from form data
 	restaurantIDStr := c.PostForm("restaurant_id")
 	if restaurantIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -73,7 +72,66 @@ func (h *Handler) Upload(c *gin.Context) {
 		"restaurant_id": restaurantID,
 		"object_key":    objectKey,
 		"status":        "MENU_UPLOADED",
-		"message":       "Menu uploaded successfully. OCR and parsing will start automatically.",
+		"message":       "Menu uploaded. Processing will continue asynchronously.",
+	})
+}
+
+// --------------------------------------------------
+// Restaurant polls menu status (CRITICAL)
+// --------------------------------------------------
+func (h *Handler) GetMenuStatus(c *gin.Context) {
+	restaurantIDStr := c.Param("restaurant_id")
+
+	var restaurantID int
+	if _, err := fmt.Sscanf(restaurantIDStr, "%d", &restaurantID); err != nil || restaurantID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid restaurant_id",
+		})
+		return
+	}
+
+	status, err := h.service.GetMenuStatus(
+		c.Request.Context(),
+		restaurantID,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
+// --------------------------------------------------
+// Restaurant retries failed menu
+// --------------------------------------------------
+func (h *Handler) RetryMenu(c *gin.Context) {
+	restaurantIDStr := c.Param("restaurant_id")
+
+	var restaurantID int
+	if _, err := fmt.Sscanf(restaurantIDStr, "%d", &restaurantID); err != nil || restaurantID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid restaurant_id",
+		})
+		return
+	}
+
+	if err := h.service.RetryFailedMenu(
+		c.Request.Context(),
+		restaurantID,
+	); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"restaurant_id": restaurantID,
+		"status":        "RETRY_QUEUED",
+		"message":       "Menu retry queued successfully",
 	})
 }
 

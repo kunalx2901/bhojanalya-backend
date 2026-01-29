@@ -31,6 +31,18 @@ type Repository interface {
 		reason string,
 	) error
 
+	// Retry a FAILED menu upload
+	RetryFailedMenu(
+		ctx context.Context,
+		restaurantID int,
+	) error
+
+	// Read current menu status (FOR FRONTEND POLLING)
+	GetMenuStatus(
+		ctx context.Context,
+		restaurantID int,
+	) (*MenuStatus, error)
+
 	// Context for competition snapshot
 	GetMenuContext(
 		ctx context.Context,
@@ -45,10 +57,8 @@ type Repository interface {
 	Approve(ctx context.Context, restaurantID int, adminID string) error
 	Reject(ctx context.Context, restaurantID int, adminID string, reason string) error
 	ApproveByRestaurant(
-	ctx context.Context,
-	restaurantID int,
-	adminID string,
+		ctx context.Context,
+		restaurantID int,
+		adminID string,
 	) error
-
 }
-
