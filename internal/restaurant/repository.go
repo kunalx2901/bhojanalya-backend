@@ -21,4 +21,12 @@ type Repository interface {
 	// restaurant images
 	SaveRestaurantImages(ctx context.Context, restaurantID int, images []string) error
 	GetRestaurantImages(ctx context.Context, restaurantID int) ([]string, error)
+
+	// admin views
+	ListApproved(ctx context.Context) ([]*Restaurant, error)
+	GetAdminDetails(
+		ctx context.Context,
+		restaurantID int,
+	) (*AdminRestaurantDetails, error)
+
 }

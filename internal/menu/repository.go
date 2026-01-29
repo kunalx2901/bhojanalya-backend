@@ -6,49 +6,43 @@ import "context"
 type Repository interface {
 
 	// -------------------------------
-	// Upload & Parsing
+	// Upload & Parsing (SAFE)
 	// -------------------------------
 
-	// Create a menu upload entry (raw menu file)
-	CreateUpload(
+	// Create OR replace menu upload for a restaurant
+	UpsertUpload(
+		ctx context.Context,
 		restaurantID int,
-		objectKey string, // R2 object key (NOT public URL)
+		objectKey string,
 		filename string,
-	) (int, error)
+	) (menuID int, status string, err error)
 
-	// Save parsed menu + cost-for-two as JSON
-	SaveParsedMenu(
-		menuUploadID int,
+	// Atomically mark menu as PARSED and save JSON
+	MarkParsed(
+		ctx context.Context,
+		restaurantID int,
 		doc map[string]interface{},
 	) error
 
-	// Get city and cuisine from menu upload entry
+	// Mark menu as FAILED (no parsed_data written)
+	MarkFailed(
+		ctx context.Context,
+		restaurantID int,
+		reason string,
+	) error
+
+	// Context for competition snapshot
 	GetMenuContext(
 		ctx context.Context,
-		menuUploadID int,
+		restaurantID int,
 	) (city string, cuisine string, err error)
 
 	// -------------------------------
-	// Admin Approval (FINAL PHASE)
+	// Admin Approval
 	// -------------------------------
 
-	// List menus that are parsed but not yet approved
-	ListPending(
-		ctx context.Context,
-	) ([]MenuUpload, error)
-
-	// Approve a parsed menu
-	Approve(
-		ctx context.Context,
-		menuID int,
-		adminID string,
-	) error
-
-	// Reject a parsed menu with reason
-	Reject(
-		ctx context.Context,
-		menuID int,
-		adminID string,
-		reason string,
-	) error
+	ListPending(ctx context.Context) ([]MenuUpload, error)
+	Approve(ctx context.Context, restaurantID int, adminID string) error
+	Reject(ctx context.Context, restaurantID int, adminID string, reason string) error
 }
+

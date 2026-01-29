@@ -20,9 +20,12 @@ func NewHandler(service *Service) *Handler {
 // --------------------------------------------------
 func (h *Handler) CreateRestaurant(c *gin.Context) {
 	var req struct {
-		Name        string `json:"name"`
-		City        string `json:"city"`
-		CuisineType string `json:"cuisine_type"`
+		Name             string `json:"name"`
+		City             string `json:"city"`
+		CuisineType      string `json:"cuisine_type"`
+		ShortDescription string `json:"short_description"`
+		OpensAt          string `json:"opens_at"`
+		ClosesAt         string `json:"closes_at"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -30,9 +33,14 @@ func (h *Handler) CreateRestaurant(c *gin.Context) {
 		return
 	}
 
-	ownerID, exists := c.Get("userID")
+	userIDVal, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user context"})
 		return
 	}
 
@@ -40,7 +48,10 @@ func (h *Handler) CreateRestaurant(c *gin.Context) {
 		req.Name,
 		req.City,
 		req.CuisineType,
-		ownerID.(string),
+		req.ShortDescription,
+		req.OpensAt,
+		req.ClosesAt,
+		userID,
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -54,19 +65,59 @@ func (h *Handler) CreateRestaurant(c *gin.Context) {
 // List restaurants owned by user
 // --------------------------------------------------
 func (h *Handler) ListMyRestaurants(c *gin.Context) {
-	ownerID, exists := c.Get("userID")
+	userIDVal, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	userID, ok := userIDVal.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user context"})
+		return
+	}
 
-	restaurants, err := h.service.ListMyRestaurants(ownerID.(string))
+	restaurants, err := h.service.ListMyRestaurants(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch restaurants"})
 		return
 	}
 
 	c.JSON(http.StatusOK, restaurants)
+}
+
+// --------------------------------------------------
+// ADMIN: List approved restaurants
+// --------------------------------------------------
+func (h *Handler) ListApprovedRestaurants(c *gin.Context) {
+	restaurants, err := h.service.ListApprovedRestaurants(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch approved restaurants"})
+		return
+	}
+
+	c.JSON(http.StatusOK, restaurants)
+}
+
+// --------------------------------------------------
+// ADMIN: View restaurant details
+// --------------------------------------------------
+func (h *Handler) GetAdminRestaurantDetails(c *gin.Context) {
+	var restaurantID int
+	if _, err := fmt.Sscanf(c.Param("id"), "%d", &restaurantID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid restaurant id"})
+		return
+	}
+
+	details, err := h.service.GetAdminRestaurantDetails(
+		c.Request.Context(),
+		restaurantID,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, details)
 }
 
 // --------------------------------------------------
@@ -79,16 +130,21 @@ func (h *Handler) GetCompetitionInsight(c *gin.Context) {
 		return
 	}
 
-	userID, exists := c.Get("userID")
+	userIDVal, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user context"})
 		return
 	}
 
 	insight, err := h.service.GetCompetitiveInsight(
 		c.Request.Context(),
 		restaurantID,
-		userID.(string),
+		userID,
 	)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -100,7 +156,6 @@ func (h *Handler) GetCompetitionInsight(c *gin.Context) {
 
 // --------------------------------------------------
 // POST /restaurants/:id/images
-// Upload restaurant images
 // --------------------------------------------------
 func (h *Handler) UploadImages(c *gin.Context) {
 	var restaurantID int
@@ -109,9 +164,14 @@ func (h *Handler) UploadImages(c *gin.Context) {
 		return
 	}
 
-	userID, exists := c.Get("userID")
+	userIDVal, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user context"})
 		return
 	}
 
@@ -121,13 +181,11 @@ func (h *Handler) UploadImages(c *gin.Context) {
 		return
 	}
 
-	files := form.File["images"]
-
 	if err := h.service.UploadImages(
 		c.Request.Context(),
 		restaurantID,
-		userID.(string),
-		files,
+		userID,
+		form.File["images"],
 	); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
@@ -144,21 +202,30 @@ func (h *Handler) UploadImages(c *gin.Context) {
 func (h *Handler) Preview(c *gin.Context) {
 	var restaurantID int
 	if _, err := fmt.Sscanf(c.Param("id"), "%d", &restaurantID); err != nil {
-		c.JSON(400, gin.H{"error": "invalid restaurant id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid restaurant id"})
 		return
 	}
 
-	userID, _ := c.Get("userID")
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user context"})
+		return
+	}
 
 	data, err := h.service.GetPreview(
 		c.Request.Context(),
 		restaurantID,
-		userID.(string),
+		userID,
 	)
 	if err != nil {
-		c.JSON(403, gin.H{"error": err.Error()})
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(200, data)
+	c.JSON(http.StatusOK, data)
 }

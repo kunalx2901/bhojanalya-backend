@@ -78,14 +78,11 @@ func main() {
 		authGroup.POST("/register", authHandler.Register)
 		authGroup.POST("/login", authHandler.Login)
 
-		// 🔐 Protected auth routes
 		protected := authGroup.Group("/protected")
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/ping", func(c *gin.Context) {
-				c.JSON(200, gin.H{
-					"message": "pong",
-				})
+				c.JSON(200, gin.H{"message": "pong"})
 			})
 		}
 	}
@@ -158,8 +155,15 @@ func main() {
 		middleware.RequireRole("ADMIN"),
 	)
 	{
+		// 🔹 Restaurants
+		admin.GET("/restaurants/approved", restaurantHandler.ListApprovedRestaurants)
+		admin.GET("/restaurants/:id", restaurantHandler.GetAdminRestaurantDetails)
+
+		// 🔹 Menus
 		admin.GET("/menus/pending", adminMenuHandler.PendingMenus)
 		admin.POST("/menus/:id/approve", adminMenuHandler.ApproveMenu)
+
+		// 🔹 Competition (manual fallback only)
 		admin.POST("/competition/recompute", competitionHandler.Recompute)
 	}
 

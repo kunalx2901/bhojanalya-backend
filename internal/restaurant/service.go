@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"bhojanalya/internal/competition"
 	"bhojanalya/internal/storage"
@@ -31,12 +32,15 @@ func NewService(
 }
 
 // --------------------------------------------------
-// Create restaurant
+// Create restaurant (with description + timings)
 // --------------------------------------------------
 func (s *Service) CreateRestaurant(
 	name string,
 	city string,
 	cuisineType string,
+	shortDescription string,
+	opensAt string,
+	closesAt string,
 	ownerID string,
 ) (*Restaurant, error) {
 
@@ -44,12 +48,26 @@ func (s *Service) CreateRestaurant(
 		return nil, errors.New("missing required fields")
 	}
 
+	if opensAt != "" && closesAt != "" {
+		oa, err1 := time.Parse("15:04", opensAt)
+		ca, err2 := time.Parse("15:04", closesAt)
+		if err1 != nil || err2 != nil {
+			return nil, errors.New("invalid time format, expected HH:MM")
+		}
+		if !oa.Before(ca) {
+			return nil, errors.New("opens_at must be before closes_at")
+		}
+	}
+
 	restaurant := &Restaurant{
-		Name:        name,
-		City:        city,
-		CuisineType: cuisineType,
-		OwnerID:     ownerID,
-		Status:      "pending",
+		Name:             name,
+		City:             city,
+		CuisineType:      cuisineType,
+		ShortDescription: shortDescription,
+		OpensAt:          opensAt,
+		ClosesAt:         closesAt,
+		OwnerID:          ownerID,
+		Status:           "pending",
 	}
 
 	if err := s.repo.Create(restaurant); err != nil {
@@ -67,6 +85,25 @@ func (s *Service) ListMyRestaurants(ownerID string) ([]*Restaurant, error) {
 }
 
 // --------------------------------------------------
+// ADMIN: List approved restaurants
+// --------------------------------------------------
+func (s *Service) ListApprovedRestaurants(
+	ctx context.Context,
+) ([]*Restaurant, error) {
+	return s.repo.ListApproved(ctx)
+}
+
+// --------------------------------------------------
+// ADMIN: View restaurant details
+// --------------------------------------------------
+func (s *Service) GetAdminRestaurantDetails(
+	ctx context.Context,
+	restaurantID int,
+) (*AdminRestaurantDetails, error) {
+	return s.repo.GetAdminDetails(ctx, restaurantID)
+}
+
+// --------------------------------------------------
 // Competitive insight (READ ONLY)
 // --------------------------------------------------
 func (s *Service) GetCompetitiveInsight(
@@ -75,8 +112,8 @@ func (s *Service) GetCompetitiveInsight(
 	userID string,
 ) (*CompetitiveInsight, error) {
 
-	isOwner, err := s.repo.IsOwner(ctx, restaurantID, userID)
-	if err != nil || !isOwner {
+	ok, err := s.repo.IsOwner(ctx, restaurantID, userID)
+	if err != nil || !ok {
 		return nil, errors.New("unauthorized")
 	}
 
@@ -106,7 +143,7 @@ func (s *Service) GetCompetitiveInsight(
 }
 
 // --------------------------------------------------
-// Upload restaurant images
+// Upload restaurant images (STORE OBJECT KEYS ONLY)
 // --------------------------------------------------
 func (s *Service) UploadImages(
 	ctx context.Context,
@@ -115,13 +152,12 @@ func (s *Service) UploadImages(
 	files []*multipart.FileHeader,
 ) error {
 
-	// 🔒 Ownership check
 	ok, err := s.repo.IsOwner(ctx, restaurantID, userID)
 	if err != nil || !ok {
 		return errors.New("unauthorized")
 	}
 
-	var imageURLs []string
+	var imageKeys []string
 
 	for _, file := range files {
 		ext := strings.ToLower(filepath.Ext(file.Filename))
@@ -135,7 +171,7 @@ func (s *Service) UploadImages(
 			file.Filename,
 		)
 
-		url, err := storage.UploadMultipartFile(
+		_, err := storage.UploadMultipartFile(
 			ctx,
 			s.r2.GetClient(),
 			s.r2.GetBucket(),
@@ -146,14 +182,15 @@ func (s *Service) UploadImages(
 			return err
 		}
 
-		imageURLs = append(imageURLs, url)
+		// ✅ store OBJECT KEY, not URL
+		imageKeys = append(imageKeys, key)
 	}
 
-	return s.repo.SaveRestaurantImages(ctx, restaurantID, imageURLs)
+	return s.repo.SaveRestaurantImages(ctx, restaurantID, imageKeys)
 }
 
 // --------------------------------------------------
-// Preview (only after deal creation)
+// Preview (SIGNED URLs)
 // --------------------------------------------------
 func (s *Service) GetPreview(
 	ctx context.Context,
@@ -161,13 +198,11 @@ func (s *Service) GetPreview(
 	userID string,
 ) (*PreviewData, error) {
 
-	// 🔒 Ownership
 	ok, err := s.repo.IsOwner(ctx, restaurantID, userID)
 	if err != nil || !ok {
 		return nil, errors.New("unauthorized")
 	}
 
-	// 🔒 Must have at least one deal
 	hasDeal, err := s.repo.HasAnyDeal(ctx, restaurantID)
 	if err != nil {
 		return nil, err
@@ -176,9 +211,27 @@ func (s *Service) GetPreview(
 		return nil, errors.New("preview unavailable until at least one deal exists")
 	}
 
-	return s.repo.GetPreviewData(ctx, restaurantID)
+	preview, err := s.repo.GetPreviewData(ctx, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, key := range preview.Images {
+		if url, err := s.r2.GetSignedURL(ctx, key, 15*time.Minute); err == nil {
+			preview.Images[i] = url
+		}
+	}
+
+	for i, key := range preview.MenuPDFs {
+		if url, err := s.r2.GetSignedURL(ctx, key, 15*time.Minute); err == nil {
+			preview.MenuPDFs[i] = url
+		}
+	}
+
+	return preview, nil
 }
 
+// --------------------------------------------------
 
 func determinePosition(cost, median float64) string {
 	switch {

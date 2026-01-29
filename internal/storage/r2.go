@@ -6,7 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
-
+	"time"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -121,3 +121,27 @@ func DownloadFromR2(ctx context.Context, client *s3.Client, bucket, key, localPa
 	_, err = io.Copy(file, out.Body)
 	return err
 }
+
+func (r *R2Client) GetSignedURL(
+	ctx context.Context,
+	objectKey string,
+	expiry time.Duration,
+) (string, error) {
+
+	presigner := s3.NewPresignClient(r.client)
+
+	req, err := presigner.PresignGetObject(
+		ctx,
+		&s3.GetObjectInput{
+			Bucket: &r.bucket,
+			Key:    &objectKey,
+		},
+		s3.WithPresignExpires(expiry),
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return req.URL, nil
+}
+

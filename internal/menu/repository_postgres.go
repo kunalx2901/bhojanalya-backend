@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,18 +18,53 @@ func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 }
 
 // --------------------------------------------------
-// Create menu upload entry
+// UPSERT MENU UPLOAD (ONE MENU PER RESTAURANT)
 // --------------------------------------------------
-func (r *PostgresRepository) CreateUpload(
+func (r *PostgresRepository) UpsertUpload(
+	ctx context.Context,
 	restaurantID int,
-	objectKey string, // ✅ R2 object key
+	objectKey string,
 	filename string,
-) (int, error) {
+) (int, string, error) {
 
-	var id int
-	err := r.db.QueryRow(
-		context.Background(),
-		`
+	var (
+		menuID int
+		status string
+	)
+
+	// Check existing menu (if any)
+	err := r.db.QueryRow(ctx, `
+		SELECT id, status
+		FROM menu_uploads
+		WHERE restaurant_id = $1
+	`, restaurantID).Scan(&menuID, &status)
+
+	if err == nil {
+		// Menu already exists
+		if status == "PARSED" {
+			return menuID, status, errors.New("menu already parsed and locked")
+		}
+
+		// Replace existing (retry allowed)
+		_, err := r.db.Exec(ctx, `
+			UPDATE menu_uploads
+			SET image_url = $1,
+			    original_filename = $2,
+			    status = 'MENU_UPLOADED',
+			    parsed_data = NULL,
+			    updated_at = now()
+			WHERE restaurant_id = $3
+		`, objectKey, filename, restaurantID)
+
+		return menuID, "MENU_UPLOADED", err
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, "", err
+	}
+
+	// No menu exists → create once
+	err = r.db.QueryRow(ctx, `
 		INSERT INTO menu_uploads (
 			restaurant_id,
 			image_url,
@@ -39,20 +75,17 @@ func (r *PostgresRepository) CreateUpload(
 		)
 		VALUES ($1, $2, $3, 'MENU_UPLOADED', now(), now())
 		RETURNING id
-		`,
-		restaurantID,
-		objectKey,
-		filename,
-	).Scan(&id)
+	`, restaurantID, objectKey, filename).Scan(&menuID)
 
-	return id, err
+	return menuID, "MENU_UPLOADED", err
 }
 
 // --------------------------------------------------
-// Save parsed menu + cost-for-two JSON
+// MARK PARSED (ATOMIC, SAFE)
 // --------------------------------------------------
-func (r *PostgresRepository) SaveParsedMenu(
-	menuUploadID int,
+func (r *PostgresRepository) MarkParsed(
+	ctx context.Context,
+	restaurantID int,
 	doc map[string]interface{},
 ) error {
 
@@ -61,45 +94,66 @@ func (r *PostgresRepository) SaveParsedMenu(
 		return err
 	}
 
-	cmd, err := r.db.Exec(
-		context.Background(),
-		`
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	cmd, err := tx.Exec(ctx, `
 		UPDATE menu_uploads
 		SET parsed_data = $1,
 		    status = 'PARSED',
 		    updated_at = now()
-		WHERE id = $2
-		`,
-		data,
-		menuUploadID,
-	)
+		WHERE restaurant_id = $2
+	`, data, restaurantID)
+
 	if err != nil {
 		return err
 	}
 
 	if cmd.RowsAffected() == 0 {
-		return errors.New("no menu_upload row updated")
+		return errors.New("no menu row updated")
 	}
 
-	return nil
+	return tx.Commit(ctx)
 }
 
 // --------------------------------------------------
-// Fetch city + cuisine for a menu upload
+// MARK FAILED (NO PARSED DATA WRITTEN)
+// --------------------------------------------------
+func (r *PostgresRepository) MarkFailed(
+	ctx context.Context,
+	restaurantID int,
+	reason string,
+) error {
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE menu_uploads
+		SET status = 'FAILED',
+		    rejection_reason = $1,
+		    updated_at = now()
+		WHERE restaurant_id = $2
+	`, reason, restaurantID)
+
+	return err
+}
+
+// --------------------------------------------------
+// MENU CONTEXT (FOR COMPETITION SNAPSHOT)
 // --------------------------------------------------
 func (r *PostgresRepository) GetMenuContext(
 	ctx context.Context,
-	menuUploadID int,
+	restaurantID int,
 ) (city string, cuisine string, err error) {
 
 	err = r.db.QueryRow(ctx, `
 		SELECT
 			r.city,
 			r.cuisine_type
-		FROM menu_uploads mu
-		JOIN restaurants r ON mu.restaurant_id = r.id
-		WHERE mu.id = $1
-	`, menuUploadID).Scan(&city, &cuisine)
+		FROM restaurants r
+		WHERE r.id = $1
+	`, restaurantID).Scan(&city, &cuisine)
 
 	return
 }
@@ -108,7 +162,7 @@ func (r *PostgresRepository) GetMenuContext(
 // ADMIN APPROVAL — FINAL PHASE
 // --------------------------------------------------
 
-// List menus that are parsed but not yet approved
+// List menus pending approval
 func (r *PostgresRepository) ListPending(
 	ctx context.Context,
 ) ([]MenuUpload, error) {
@@ -122,7 +176,7 @@ func (r *PostgresRepository) ListPending(
 		FROM menu_uploads
 		WHERE status = 'PARSED'
 		  AND approved_at IS NULL
-		ORDER BY created_at ASC
+		ORDER BY updated_at ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -130,16 +184,14 @@ func (r *PostgresRepository) ListPending(
 	defer rows.Close()
 
 	var menus []MenuUpload
-
 	for rows.Next() {
 		var m MenuUpload
-		err := rows.Scan(
+		if err := rows.Scan(
 			&m.ID,
 			&m.RestaurantID,
 			&m.Filename,
 			&m.ParsedData,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 		menus = append(menus, m)
@@ -148,10 +200,10 @@ func (r *PostgresRepository) ListPending(
 	return menus, nil
 }
 
-// Approve a parsed menu
+// Approve menu (ADMIN)
 func (r *PostgresRepository) Approve(
 	ctx context.Context,
-	menuID int,
+	restaurantID int,
 	adminID string,
 ) error {
 
@@ -159,16 +211,17 @@ func (r *PostgresRepository) Approve(
 		UPDATE menu_uploads
 		SET approved_at = now(),
 		    approved_by = $2
-		WHERE id = $1
-	`, menuID, adminID)
+		WHERE restaurant_id = $1
+		  AND status = 'PARSED'
+	`, restaurantID, adminID)
 
 	return err
 }
 
-// Reject a parsed menu with reason
+// Reject menu (ADMIN)
 func (r *PostgresRepository) Reject(
 	ctx context.Context,
-	menuID int,
+	restaurantID int,
 	adminID string,
 	reason string,
 ) error {
@@ -177,9 +230,10 @@ func (r *PostgresRepository) Reject(
 		UPDATE menu_uploads
 		SET status = 'REJECTED',
 		    approved_by = $2,
-		    rejection_reason = $3
-		WHERE id = $1
-	`, menuID, adminID, reason)
+		    rejection_reason = $3,
+		    updated_at = now()
+		WHERE restaurant_id = $1
+	`, restaurantID, adminID, reason)
 
 	return err
 }
