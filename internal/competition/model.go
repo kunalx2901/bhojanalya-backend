@@ -1,5 +1,4 @@
 package competition
-
 import "time"
 
 // Snapshot represents aggregated competitive pricing data
