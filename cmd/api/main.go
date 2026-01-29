@@ -39,6 +39,7 @@ func main() {
 		"R2_SECRET_KEY",
 		"R2_BUCKET_NAME",
 		"R2_ENDPOINT",
+		"R2_PUBLIC_BASE_URL",
 	}
 
 	for _, k := range required {
@@ -89,12 +90,16 @@ func main() {
 
 	// ───────────────────────── CORE REPOS ─────────────────────────
 	restaurantRepo := restaurant.NewPostgresRepository(pgDB)
+	menuRepo := menu.NewPostgresRepository(pgDB)
 	competitionRepo := competition.NewRepository(pgDB)
 	dealRepo := deals.NewRepository(pgDB)
 
-	// ───────────────────────── SERVICES ─────────────────────────
+	// ───────────────────────── SERVICES (ORDER MATTERS) ─────────────────────────
+	menuService := menu.NewService(menuRepo, r2Client)
+
 	restaurantService := restaurant.NewService(
 		restaurantRepo,
+		menuService,
 		competitionRepo,
 		r2Client,
 	)
@@ -105,16 +110,13 @@ func main() {
 		competitionRepo,
 	)
 
-	menuRepo := menu.NewPostgresRepository(pgDB)
-	menuService := menu.NewService(menuRepo, r2Client)
-
 	competitionService := competition.NewService(pgDB)
 
 	// ───────────────────────── HANDLERS ─────────────────────────
 	restaurantHandler := restaurant.NewHandler(restaurantService)
-	dealHandler := deals.NewHandler(dealService)
 	menuHandler := menu.NewHandler(menuService)
 	adminMenuHandler := menu.NewAdminHandler(menuService)
+	dealHandler := deals.NewHandler(dealService)
 	competitionHandler := competition.NewHandler(competitionService)
 
 	// ───────────────────────── RESTAURANT ROUTES ─────────────────────────
@@ -141,36 +143,36 @@ func main() {
 		dealsGroup.POST("", dealHandler.CreateDeal())
 	}
 
-	// ───────────────────────── MENU ─────────────────────────
+	// ───────────────────────── MENU ROUTES ─────────────────────────
 	menus := r.Group("/menus")
 	menus.Use(middleware.AuthMiddleware())
 	{
 		menus.POST("/upload", menuHandler.Upload)
 	}
 
-	// ───────────────────────── ADMIN ─────────────────────────
+	// ───────────────────────── ADMIN ROUTES ─────────────────────────
 	admin := r.Group("/admin")
 	admin.Use(
 		middleware.AuthMiddleware(),
 		middleware.RequireRole("ADMIN"),
 	)
 	{
-		// 🔹 Restaurants
+		// Restaurants
 		admin.GET("/restaurants/approved", restaurantHandler.ListApprovedRestaurants)
 		admin.GET("/restaurants/:id", restaurantHandler.GetAdminRestaurantDetails)
+		admin.POST("/restaurants/:id/approve", restaurantHandler.ApproveRestaurant)
 
-		// 🔹 Menus
+		// Menus
 		admin.GET("/menus/pending", adminMenuHandler.PendingMenus)
-		admin.POST("/menus/:id/approve", adminMenuHandler.ApproveMenu)
 
-		// 🔹 Competition (manual fallback only)
+		// Competition (manual fallback)
 		admin.POST("/competition/recompute", competitionHandler.Recompute)
 	}
 
 	// ───────────────────────── PUBLIC ─────────────────────────
 	r.GET("/competition/insights", competitionHandler.Get)
 
-	// ───────────────────────── OCR + LLM ─────────────────────────
+	// ───────────────────────── OCR + LLM WORKERS ─────────────────────────
 	llmClient := llm.NewGeminiClient()
 	ocrRepo := ocr.NewRepository(pgDB)
 

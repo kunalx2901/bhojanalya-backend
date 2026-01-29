@@ -203,20 +203,65 @@ func (r *PostgresRepository) ListPending(
 // Approve menu (ADMIN)
 func (r *PostgresRepository) Approve(
 	ctx context.Context,
-	restaurantID int,
+	menuID int,
 	adminID string,
 ) error {
 
-	_, err := r.db.Exec(ctx, `
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1️⃣ Approve menu
+	cmd, err := tx.Exec(ctx, `
 		UPDATE menu_uploads
 		SET approved_at = now(),
 		    approved_by = $2
-		WHERE restaurant_id = $1
+		WHERE id = $1
 		  AND status = 'PARSED'
-	`, restaurantID, adminID)
+	`, menuID, adminID)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return errors.New("menu not found or not parsed")
+	}
 
-	return err
+	// 2️⃣ Approve restaurant
+	_, err = tx.Exec(ctx, `
+		UPDATE restaurants
+		SET status = 'approved'
+		WHERE id = (
+			SELECT restaurant_id
+			FROM menu_uploads
+			WHERE id = $1
+		)
+	`, menuID)
+	if err != nil {
+		return err
+	}
+
+	// 3️⃣ Approve all pending deals
+	_, err = tx.Exec(ctx, `
+		UPDATE deals
+		SET status = 'APPROVED',
+		    approved_at = now(),
+		    approved_by = $2
+		WHERE restaurant_id = (
+			SELECT restaurant_id
+			FROM menu_uploads
+			WHERE id = $1
+		)
+		AND status = 'PENDING_APPROVAL'
+	`, menuID, adminID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
+
 
 // Reject menu (ADMIN)
 func (r *PostgresRepository) Reject(
@@ -236,4 +281,58 @@ func (r *PostgresRepository) Reject(
 	`, restaurantID, adminID, reason)
 
 	return err
+}
+
+func (r *PostgresRepository) ApproveByRestaurant(
+	ctx context.Context,
+	restaurantID int,
+	adminID string,
+) error {
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1️⃣ Approve latest PARSED menu
+	cmd, err := tx.Exec(ctx, `
+		UPDATE menu_uploads
+		SET approved_at = now(),
+		    approved_by = $2
+		WHERE restaurant_id = $1
+		  AND status = 'PARSED'
+		  AND approved_at IS NULL
+	`, restaurantID, adminID)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return errors.New("no parsed menu found for restaurant")
+	}
+
+	// 2️⃣ Approve restaurant
+	_, err = tx.Exec(ctx, `
+		UPDATE restaurants
+		SET status = 'approved'
+		WHERE id = $1
+	`, restaurantID)
+	if err != nil {
+		return err
+	}
+
+	// 3️⃣ Approve all pending deals
+	_, err = tx.Exec(ctx, `
+		UPDATE deals
+		SET status = 'APPROVED',
+		    approved_at = now(),
+		    approved_by = $2
+		WHERE restaurant_id = $1
+		  AND status = 'PENDING_APPROVAL'
+	`, restaurantID, adminID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
