@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"log"
 
@@ -57,11 +58,11 @@ func (s *Service) Register(name, email, password string) (*User, error) {
 // LOGIN
 func (s *Service) Login(email, password string) (*User, error) {
 	log.Printf("Login attempt for email: %s", email)
-	
+
 	// Check if it's the admin credentials
 	if email == AdminEmail && password == AdminPassword {
 		log.Printf("Admin login successful for email: %s", email)
-		
+
 		// Check if admin already exists in database
 		adminUser, err := s.repo.FindByEmail(email)
 		if err != nil {
@@ -80,16 +81,16 @@ func (s *Service) Login(email, password string) (*User, error) {
 				Password: string(hashedPassword),
 				Role:     string(RoleAdmin), // Stored as ADMIN role in database
 			}
-			
+
 			if err := s.repo.Save(adminUser); err != nil {
 				log.Printf("Error saving admin user: %v", err)
 				return nil, err
 			}
-			
+
 			log.Printf("Admin user created in database with ADMIN role")
 			return adminUser, nil
 		}
-		
+
 		// Admin exists, verify password and return
 		err = bcrypt.CompareHashAndPassword(
 			[]byte(adminUser.Password),
@@ -99,10 +100,10 @@ func (s *Service) Login(email, password string) (*User, error) {
 			log.Printf("Admin password mismatch for email: %s", email)
 			return nil, ErrInvalidCredentials
 		}
-		
+
 		return adminUser, nil
 	}
-	
+
 	user, err := s.repo.FindByEmail(email)
 	if err != nil {
 		log.Printf("User not found: %s", email)
@@ -120,4 +121,11 @@ func (s *Service) Login(email, password string) (*User, error) {
 
 	log.Printf("Login successful for email: %s with role: %s", email, user.Role)
 	return user, nil
+}
+func (s *Service) GetOnboardingStatus(ctx context.Context, userID string) (string, error) {
+	return s.repo.GetOnboardingStatus(ctx, userID)
+}
+
+func (s *Service) UpdateOnboardingStatus(ctx context.Context, userID string, status string) error {
+	return s.repo.UpdateOnboardingStatus(ctx, userID, status)
 }

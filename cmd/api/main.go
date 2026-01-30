@@ -83,6 +83,10 @@ func main() {
 			protected.GET("/ping", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "pong"})
 			})
+
+			// ✅ ADD THESE TWO LINES
+			protected.GET("/onboarding", authHandler.GetOnboardingStatus)
+			protected.PATCH("/onboarding", authHandler.UpdateOnboardingStatus)
 		}
 	}
 
@@ -147,7 +151,7 @@ func main() {
 	{
 		menus.POST("/upload", menuHandler.Upload)
 
-			// ✅ STATUS POLLING (Feature-1)
+		// ✅ STATUS POLLING (Feature-1)
 		menus.GET("/:restaurant_id/status", menuHandler.GetMenuStatus)
 
 		// ✅ RETRY FAILED MENU (Feature-2)
