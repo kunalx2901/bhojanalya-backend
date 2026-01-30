@@ -117,7 +117,7 @@ func (r *PostgresRepository) ListApproved(
 			closes_at,
 			created_at
 		FROM restaurants
-		WHERE status = 'APPROVED'
+		WHERE status = 'approved'
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
