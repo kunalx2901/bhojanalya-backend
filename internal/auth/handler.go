@@ -71,8 +71,41 @@ func (h *Handler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "login successful",
-		"name":	user.Name,
+		"name":    user.Name,
 		"email":   user.Email,
 		"token":   token,
 	})
+}
+
+type UpdateStatusRequest struct {
+	Status string `json:"onboarding_status"`
+}
+
+func (h *Handler) GetOnboardingStatus(c *gin.Context) {
+	// Assuming your middleware sets "userID" in the Gin context
+	userID, _ := c.Get("userID")
+
+	status, err := h.service.GetOnboardingStatus(c.Request.Context(), userID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get status"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"onboarding_status": status})
+}
+
+func (h *Handler) UpdateOnboardingStatus(c *gin.Context) {
+	userID, _ := c.Get("userID")
+
+	var req UpdateStatusRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	err := h.service.UpdateOnboardingStatus(c.Request.Context(), userID.(string), req.Status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update status"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "status updated successfully"})
 }

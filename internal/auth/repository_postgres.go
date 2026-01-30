@@ -57,3 +57,46 @@ func (r *PostgresUserRepository) FindByEmail(email string) (*User, error) {
 	}
 	return user, nil
 }
+
+// --------------------------------------------------
+// Onboarding Status
+// --------------------------------------------------
+
+func (r *PostgresUserRepository) GetOnboardingStatus(
+	ctx context.Context,
+	userID string,
+) (string, error) {
+
+	var status *string
+
+	err := r.db.QueryRow(ctx, `
+		SELECT onboarding_status
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(&status)
+
+	if err != nil {
+		return "", err
+	}
+
+	if status == nil {
+		return "NULL", nil
+	}
+
+	return *status, nil
+}
+
+func (r *PostgresUserRepository) UpdateOnboardingStatus(
+	ctx context.Context,
+	userID string,
+	status string,
+) error {
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET onboarding_status = $1
+		WHERE id = $2
+	`, status, userID)
+
+	return err
+}

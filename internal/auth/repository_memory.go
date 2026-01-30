@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -36,4 +37,11 @@ func (r *InMemoryUserRepository) FindByEmail(email string) (*User, error) {
 		return nil, errors.New("user not found")
 	}
 	return user, nil
+}
+func (r *InMemoryUserRepository) GetOnboardingStatus(ctx context.Context, userID string) (string, error) {
+	return "PENDING", nil
+}
+
+func (r *InMemoryUserRepository) UpdateOnboardingStatus(ctx context.Context, userID string, status string) error {
+	return nil
 }
