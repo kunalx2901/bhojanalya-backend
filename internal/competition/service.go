@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"sort"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
