@@ -230,6 +230,7 @@ func (r *PostgresRepository) GetMenuContext(
 // ADMIN APPROVAL — FINAL PHASE
 // --------------------------------------------------
 
+
 // List menus pending approval
 func (r *PostgresRepository) ListPending(
 	ctx context.Context,
@@ -237,14 +238,21 @@ func (r *PostgresRepository) ListPending(
 
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			id,
-			restaurant_id,
-			original_filename,
-			parsed_data
-		FROM menu_uploads
-		WHERE status = 'PARSED'
-		  AND approved_at IS NULL
-		ORDER BY updated_at ASC
+			mu.id,
+			mu.restaurant_id,
+			r.name,
+			r.city,
+			r.cuisine_type,
+			r.opens_at,
+			r.closes_at,
+			mu.original_filename,
+			mu.parsed_data
+		FROM menu_uploads mu
+		JOIN restaurants r
+		  ON r.id = mu.restaurant_id
+		WHERE mu.status = 'PARSED'
+		  AND mu.approved_at IS NULL
+		ORDER BY mu.updated_at ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -252,21 +260,31 @@ func (r *PostgresRepository) ListPending(
 	defer rows.Close()
 
 	var menus []MenuUpload
+
 	for rows.Next() {
 		var m MenuUpload
 		if err := rows.Scan(
 			&m.ID,
 			&m.RestaurantID,
+			&m.RestaurantName,
+			&m.City,
+			&m.CuisineType,
+			&m.OpensAt,
+			&m.ClosesAt,
 			&m.Filename,
 			&m.ParsedData,
 		); err != nil {
 			return nil, err
 		}
+
 		menus = append(menus, m)
 	}
 
 	return menus, nil
 }
+
+
+
 
 // Approve menu (ADMIN)
 func (r *PostgresRepository) Approve(
