@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"time"
-
 	"bhojanalya/internal/auth"
 	"bhojanalya/internal/competition"
 	"bhojanalya/internal/db"
@@ -17,7 +16,6 @@ import (
 	"bhojanalya/internal/ocr"
 	"bhojanalya/internal/restaurant"
 	"bhojanalya/internal/storage"
-
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
