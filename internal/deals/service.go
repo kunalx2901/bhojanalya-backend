@@ -167,7 +167,7 @@ func (s *Service) CreateDeal(
 
 
 func determinePosition(cost, median float64) string {
-	switch {
+	switch {	
 	case cost < median*0.9:
 		return "UNDER_MARKET"
 	case cost > median*1.1:
@@ -175,4 +175,39 @@ func determinePosition(cost, median float64) string {
 	default:
 		return "MARKET_AVERAGE"
 	}
+}
+
+// Delete deal
+func (s *Service) DeleteDeal(
+	ctx context.Context,
+	dealID int,
+	userID string,
+) error {
+
+	deal, err := s.repo.GetByID(ctx, dealID)
+	if err != nil {
+		return err
+	}
+
+	ok, err := s.restaurantReader.IsOwner(ctx, deal.RestaurantID, userID)
+	if err != nil || !ok {
+		return errors.New("unauthorized")
+	}
+
+	return s.repo.DeleteByID(ctx, dealID)
+}
+
+// Get all deals of a restaurant
+func (s *Service) GetRestaurantDeals(
+	ctx context.Context,
+	restaurantID int,
+	userID string,
+) ([]*Deal, error) {
+
+	ok, err := s.restaurantReader.IsOwner(ctx, restaurantID, userID)
+	if err != nil || !ok {
+		return nil, errors.New("unauthorized")
+	}
+
+	return s.repo.ListByRestaurant(ctx, restaurantID)
 }

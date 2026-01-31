@@ -139,7 +139,18 @@ func main() {
 	{
 		dealsGroup.GET("/suggestion", dealHandler.GetDealSuggestion())
 		dealsGroup.POST("", dealHandler.CreateDeal())
+		dealsGroup.GET("", dealHandler.GetRestaurantDeals())
 	}
+
+	deleteDeal := r.Group("/deals")
+	deleteDeal.Use(
+		middleware.AuthMiddleware(),
+		middleware.RequireRole("RESTAURANT"),
+	)
+	{
+		deleteDeal.DELETE("/:id", dealHandler.DeleteDeal())
+	}
+
 
 	// ───────────────────────── MENU ROUTES ─────────────────────────
 	menus := r.Group("/menus")
