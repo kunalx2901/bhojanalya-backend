@@ -250,13 +250,22 @@ func (r *PostgresRepository) GetPreviewData(
 
 	// Core
 	err := r.db.QueryRow(ctx, `
-		SELECT name, city, cuisine_type
+		SELECT
+			name,
+			city,
+			cuisine_type,
+			short_description,
+			opens_at,
+			closes_at
 		FROM restaurants
 		WHERE id = $1
 	`, restaurantID).Scan(
 		&p.Name,
 		&p.City,
 		&p.CuisineType,
+		&p.ShortDescription,
+		&p.OpensAt,
+		&p.ClosesAt,
 	)
 	if err != nil {
 		return nil, err
