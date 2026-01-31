@@ -202,17 +202,16 @@ func (s *Service) GetPreview(
 	userID string,
 ) (*PreviewData, error) {
 
-	ok, err := s.repo.IsOwner(ctx, restaurantID, userID)
-	if err != nil || !ok {
-		return nil, errors.New("unauthorized")
-	}
-
-	hasDeal, err := s.repo.HasAnyDeal(ctx, restaurantID)
+	IsOwner, err := s.repo.IsOwner(ctx, restaurantID, userID)
 	if err != nil {
 		return nil, err
 	}
-	if !hasDeal {
-		return nil, errors.New("preview unavailable until at least one deal exists")
+
+	if !IsOwner {
+		role, _ := ctx.Value("userRole").(string)
+		if role != "admin"{
+			return nil, errors.New("unauthorized")
+		}
 	}
 
 	preview, err := s.repo.GetPreviewData(ctx, restaurantID)

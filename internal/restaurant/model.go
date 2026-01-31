@@ -17,16 +17,20 @@ type Restaurant struct {
 
 
 type PreviewData struct {
-	ID            int      `json:"id"`
-	Name          string
-	City          string
-	CuisineType   string
-	CostForTwo    float64
-	Images        []string
-	MenuPDFs      []string `json:"menu_pdfs"`
+	ID               int      `json:"id"`
+	Name             string   `json:"name"`
+	City             string   `json:"city"`
+	CuisineType      string   `json:"cuisine_type"`
+	ShortDescription string   `json:"short_description"`
+	OpensAt          string   `json:"opens_at"`
+	ClosesAt         string   `json:"closes_at"`
 
-	Deals         []PreviewDeal `json:"deals"`
+	CostForTwo float64  `json:"cost_for_two"`
+	Images     []string `json:"images"`
+	MenuPDFs   []string `json:"menu_pdfs"`
+	Deals      []PreviewDeal `json:"deals"`
 }
+
 
 type PreviewDeal struct {
 	ID            int     `json:"id"`
