@@ -95,3 +95,54 @@ func (h *Handler) CreateDeal() gin.HandlerFunc {
 		})
 	}
 }
+
+// GET /restaurants/:id/deals
+func (h *Handler) GetRestaurantDeals() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		var restaurantID int
+		if _, err := fmt.Sscanf(c.Param("id"), "%d", &restaurantID); err != nil {
+			c.JSON(400, gin.H{"error": "invalid restaurant id"})
+			return
+		}
+
+		userID := c.GetString("userID")
+
+		deals, err := h.service.GetRestaurantDeals(
+			c.Request.Context(),
+			restaurantID,
+			userID,
+		)
+		if err != nil {
+			c.JSON(403, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(200, deals)
+	}
+}
+
+// DELETE /deals/:id
+func (h *Handler) DeleteDeal() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		var dealID int
+		if _, err := fmt.Sscanf(c.Param("id"), "%d", &dealID); err != nil {
+			c.JSON(400, gin.H{"error": "invalid deal id"})
+			return
+		}
+
+		userID := c.GetString("userID")
+
+		if err := h.service.DeleteDeal(
+			c.Request.Context(),
+			dealID,
+			userID,
+		); err != nil {
+			c.JSON(403, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(200, gin.H{"status": "removed"})
+	}
+}
