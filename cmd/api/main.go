@@ -123,6 +123,11 @@ func main() {
 	competitionHandler := competition.NewHandler(competitionService)
 
 	// ───────────────────────── RESTAURANT ROUTES ─────────────────────────
+
+	// 1. OPEN ROUTE: Only requires login. (The Service handles Admin vs Owner logic)
+	r.GET("/restaurants/:id/preview", middleware.AuthMiddleware(), restaurantHandler.Preview)
+
+	// 2. RESTRICTED ROUTES: Strictly requires the RESTAURANT role
 	restaurants := r.Group("/restaurants")
 	restaurants.Use(
 		middleware.AuthMiddleware(),
@@ -131,7 +136,6 @@ func main() {
 	{
 		restaurants.POST("", restaurantHandler.CreateRestaurant)
 		restaurants.GET("/me", restaurantHandler.ListMyRestaurants)
-		restaurants.GET("/:id/preview", restaurantHandler.Preview)
 		restaurants.POST("/:id/images", restaurantHandler.UploadImages)
 	}
 

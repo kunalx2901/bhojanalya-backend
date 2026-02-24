@@ -1,6 +1,7 @@
 package restaurant
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -217,8 +218,20 @@ func (h *Handler) Preview(c *gin.Context) {
 		return
 	}
 
+	// 🔴 THE PERFECT CONTEXT BRIDGE
+	ctx := c.Request.Context()
+
+	// 1. Get "userRole" from Gin exactly as the middleware named it
+	roleVal, roleExists := c.Get("userRole")
+	if roleExists {
+		if roleStr, ok := roleVal.(string); ok {
+			// 2. Inject it into the Go standard context as "userRole"
+			ctx = context.WithValue(ctx, "userRole", roleStr)
+		}
+	}
+
 	data, err := h.service.GetPreview(
-		c.Request.Context(),
+		ctx,
 		restaurantID,
 		userID,
 	)
@@ -230,8 +243,7 @@ func (h *Handler) Preview(c *gin.Context) {
 	c.JSON(http.StatusOK, data)
 }
 
-
-// to get the restaurant approved by the admin 
+// to get the restaurant approved by the admin
 func (h *Handler) ApproveRestaurant(c *gin.Context) {
 	var restaurantID int
 	if _, err := fmt.Sscanf(c.Param("id"), "%d", &restaurantID); err != nil {

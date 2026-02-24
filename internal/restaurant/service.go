@@ -1,6 +1,9 @@
 package restaurant
 
 import (
+	"bhojanalya/internal/competition"
+	"bhojanalya/internal/menu"
+	"bhojanalya/internal/storage"
 	"context"
 	"errors"
 	"fmt"
@@ -8,9 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"bhojanalya/internal/menu"
-	"bhojanalya/internal/competition"
-	"bhojanalya/internal/storage"
 )
 
 type Service struct {
@@ -33,7 +33,6 @@ func NewService(
 		r2:              r2,
 	}
 }
-
 
 // --------------------------------------------------
 // Create restaurant (with description + timings)
@@ -196,35 +195,36 @@ func (s *Service) UploadImages(
 // --------------------------------------------------
 // Preview (SIGNED URLs)
 // --------------------------------------------------
-func (s *Service) GetPreview(
-	ctx context.Context,
-	restaurantID int,
-	userID string,
-) (*PreviewData, error) {
+func (s *Service) GetPreview(ctx context.Context, restaurantID int, userID string) (*PreviewData, error) {
 
-	IsOwner, err := s.repo.IsOwner(ctx, restaurantID, userID)
-	if err != nil {
-		return nil, err
-	}
+	// 1. Extract exactly "userRole" from the context
+	role, _ := ctx.Value("userRole").(string)
 
-	if !IsOwner {
-		role, _ := ctx.Value("userRole").(string)
-		if role != "admin"{
-			return nil, errors.New("unauthorized")
+	// 2. Check if admin
+	isAdmin := strings.ToUpper(role) == "ADMIN"
+
+	if !isAdmin {
+		isOwner, err := s.repo.IsOwner(ctx, restaurantID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !isOwner {
+			return nil, errors.New("unauthorized: not the owner")
 		}
 	}
 
+	// 3. Access Granted - Fetch Preview Data
 	preview, err := s.repo.GetPreviewData(ctx, restaurantID)
 	if err != nil {
 		return nil, err
 	}
 
+	// 4. Sign URLs...
 	for i, key := range preview.Images {
 		if url, err := s.r2.GetSignedURL(ctx, key, 15*time.Minute); err == nil {
 			preview.Images[i] = url
 		}
 	}
-
 	for i, key := range preview.MenuPDFs {
 		if url, err := s.r2.GetSignedURL(ctx, key, 15*time.Minute); err == nil {
 			preview.MenuPDFs[i] = url
@@ -258,4 +258,3 @@ func (s *Service) ApproveRestaurant(
 	// Delegate to menu approval logic
 	return s.menuService.ApproveRestaurant(ctx, restaurantID, adminID)
 }
-
