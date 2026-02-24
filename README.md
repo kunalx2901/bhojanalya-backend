@@ -1,70 +1,128 @@
 # 🍽️ Bhojanalya
 
-A comprehensive B2B web application designed to seamlessly onboard restaurant partners, process their menus via AI-driven OCR, and empower them to create data-driven promotional deals.
+Bhojanalya is a full-stack application built to deliver a seamless digital experience with a strong backend architecture and a clean, responsive frontend. The project focuses on performance, scalability, and real-world implementation.
 
-## ✨ Key Features
+---
 
-### For Restaurant Owners 🧑‍🍳
+## 🚀 Project Overview
 
-* **Multi-Step Onboarding:** A smooth, 6-step registration process capturing restaurant details, legal compliance (FSSAI/GSTIN), and operational hours.
-* **Smart Menu Uploads:** Direct upload of Menu PDFs/Images, seamlessly tied to the restaurant's profile.
-* **AI-Powered Deals Dashboard:**
-* View market insights (Average vs. Median Cost for Two).
-* Receive AI-generated deal suggestions tailored to their pricing tier (Premium vs. Mainstream).
-* Create custom percentage-based or flat-rate discounts.
+Bhojanalya is designed to provide a structured and efficient system with secure authentication, optimized APIs, and a smooth user interface.
 
+This project demonstrates practical full-stack development skills including backend architecture, API integration, database design, and frontend responsiveness.
 
-* **Live Storefront Preview:** Instantly preview how the restaurant and active deals will appear to end customers.
+---
 
-### For Platform Admins 🛡️
+## 👨‍💻 Team
 
-* **Role-Based Access Control:** Secure JWT-based admin routing.
-* **Approval Workflow:** A dedicated dashboard to review incoming restaurant registrations and parsed OCR menu data.
-* **Data Verification:** Admins can view uploaded menu files side-by-side with the AI-parsed data (pricing, categories, operational hours) before approving them to go live.
+* **Frontend Developer:** Vaibhav Aggarwal
+* **Backend Developers:** Kunal Sharma & Kumar Saurav
 
 ---
 
 ## 🛠️ Tech Stack
 
-**Frontend:**
+### Frontend
 
-* **Framework:** [Next.js](https://nextjs.org/) (App Router)
-* **Styling:** [Tailwind CSS](https://tailwindcss.com/)
-* **Animations:** [Framer Motion](https://www.framer.com/motion/)
-* **Icons:** [Lucide React](https://lucide.dev/)
-* **Language:** TypeScript
+* Modern JavaScript framework
+* Responsive UI components
+* API integration
+* Clean and structured design
 
-**Backend (Integration):**
+### Backend
 
-* Designed to consume a RESTful API running on port `8000`.
-* **Authentication:** JWT (JSON Web Tokens) with `Bearer` strategy.
+* Scalable server architecture
+* RESTful APIs
+* Authentication & authorization
+* Database design & optimization
 
----
+### Database
 
-## 🔐 Authentication & Routing Flow
-
-1. **Token Storage:** JWTs are stored in `localStorage` upon successful login.
-2. **Interceptors/Helpers:** The `apiRequest` utility automatically appends the `Authorization: Bearer <token>` header to all requests.
-3. **Role Checks:** * The `/admin` route decodes the JWT payload to ensure the `role` is `ADMIN`. If a standard user attempts access, they are redirected to `/deals`.
-* Standard protected routes ping `/protected/ping` to verify token validity before rendering.
-
-
+* Structured relational database
+* Optimized queries
 
 ---
 
-## 🌐 Key API Integrations
+## ✨ Key Features
 
-* `POST /api/restaurants` - Creates a new restaurant profile.
-* `POST /api/menus/upload` - Handles `multipart/form-data` for menu uploads.
-* `GET /api/restaurants/:id/deals/suggestion` - Fetches AI deal suggestions and market pricing stats.
-* `POST /api/restaurants/:id/deals` - Publishes a batch of new deals.
-* `GET /api/admin/menus/pending` - Fetches the queue of parsed menus awaiting admin verification.
-* `POST /api/admin/restaurants/:id/approve` - Admin endpoint to push a restaurant live.
+* Secure user authentication
+* Role-based access
+* Optimized API responses
+* Clean and responsive UI
+* Scalable backend architecture
+* Modular and maintainable code structure
 
 ---
 
-## 🎨 UI/UX Highlights
+## 📂 Project Structure (Example)
 
-* **Optimistic UI:** Actions like removing a draft deal or approving a restaurant update the UI instantly before the server responds, ensuring a snappy experience.
-* **Fluid Layouts:** Utilizing `AnimatePresence` and `layout` props from Framer Motion for buttery-smooth accordion expansions and list re-ordering.
-* **Data Visualization:** Custom built, relative-scaled price lines to visualize a restaurant's standing against market medians and averages.
+```
+bhojanalya/
+│
+├── frontend/        # Frontend source code
+├── backend/         # Backend source code
+├── database/        # DB schemas & migrations
+├── docs/            # Documentation
+└── README.md
+```
+
+---
+
+## ⚙️ Installation & Setup
+
+### 1️⃣ Clone the Repository
+
+```bash
+git clone https://github.com/your-username/bhojanalya.git
+cd bhojanalya
+```
+
+### 2️⃣ Backend Setup
+
+```bash
+cd backend
+npm install
+npm start
+```
+
+### 3️⃣ Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+---
+
+## 🔐 Environment Variables
+
+Create a `.env` file in the backend folder:
+
+```
+PORT=your_port
+DATABASE_URL=your_database_url
+JWT_SECRET=your_secret_key
+```
+
+---
+
+## 📈 Future Improvements
+
+* Performance optimizations
+* Advanced analytics features
+* Enhanced UI transitions
+* Cloud deployment improvements
+
+---
+
+## 🤝 Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+---
+
+## 📬 Contact
+
+For collaboration or queries:
+**Kumar Saurav**
+LinkedIn: www.linkedin.com/in/kumar-saurav-a2b09a296
