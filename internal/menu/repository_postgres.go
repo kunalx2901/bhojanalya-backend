@@ -230,7 +230,6 @@ func (r *PostgresRepository) GetMenuContext(
 // ADMIN APPROVAL — FINAL PHASE
 // --------------------------------------------------
 
-
 // List menus pending approval
 func (r *PostgresRepository) ListPending(
 	ctx context.Context,
@@ -283,9 +282,6 @@ func (r *PostgresRepository) ListPending(
 	return menus, nil
 }
 
-
-
-
 // Approve menu (ADMIN)
 func (r *PostgresRepository) Approve(
 	ctx context.Context,
@@ -331,16 +327,14 @@ func (r *PostgresRepository) Approve(
 	// 3️⃣ Approve all pending deals
 	_, err = tx.Exec(ctx, `
 		UPDATE deals
-		SET status = 'APPROVED',
-		    approved_at = now(),
-		    approved_by = $2
+		SET status = 'APPROVED'
 		WHERE restaurant_id = (
 			SELECT restaurant_id
 			FROM menu_uploads
 			WHERE id = $1
 		)
 		AND status = 'PENDING_APPROVAL'
-	`, menuID, adminID)
+	`, menuID)
 	if err != nil {
 		return err
 	}
@@ -409,12 +403,10 @@ func (r *PostgresRepository) ApproveByRestaurant(
 	// 3️⃣ Approve all pending deals
 	_, err = tx.Exec(ctx, `
 		UPDATE deals
-		SET status = 'APPROVED',
-		    approved_at = now(),
-		    approved_by = $2
+		SET status = 'APPROVED'
 		WHERE restaurant_id = $1
 		  AND status = 'PENDING_APPROVAL'
-	`, restaurantID, adminID)
+	`, restaurantID)
 	if err != nil {
 		return err
 	}

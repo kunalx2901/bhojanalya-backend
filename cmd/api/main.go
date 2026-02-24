@@ -1,11 +1,6 @@
 package main
 
 import (
-	"context"
-	"log"
-	"os"
-	"os/exec"
-	"time"
 	"bhojanalya/internal/auth"
 	"bhojanalya/internal/competition"
 	"bhojanalya/internal/db"
@@ -16,6 +11,12 @@ import (
 	"bhojanalya/internal/ocr"
 	"bhojanalya/internal/restaurant"
 	"bhojanalya/internal/storage"
+	"context"
+	"log"
+	"os"
+	"os/exec"
+	"time"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -54,7 +55,7 @@ func main() {
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:5173"},
+		AllowOrigins:     []string{"https://bhojanalya.netlify.app", "http://localhost:3000"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -154,7 +155,6 @@ func main() {
 	{
 		deleteDeal.DELETE("/:id", dealHandler.DeleteDeal())
 	}
-
 
 	// ───────────────────────── MENU ROUTES ─────────────────────────
 	menus := r.Group("/menus")
