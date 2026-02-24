@@ -1,4 +1,4 @@
-# 🍽️ Bhojanalya Partner Portal
+# 🍽️ Bhojanalya
 
 A comprehensive B2B web application designed to seamlessly onboard restaurant partners, process their menus via AI-driven OCR, and empower them to create data-driven promotional deals.
 
